@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Enum, ForeignKey, String, Text
+from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, UUIDMixin
+from app.db.base import Base, UUIDMixin, value_enum
 
 
 class MatrixRow(UUIDMixin, Base):
@@ -18,19 +18,19 @@ class MatrixRow(UUIDMixin, Base):
     reference: Mapped[str] = mapped_column(String(255), nullable=False)
     requirement: Mapped[str] = mapped_column(Text, nullable=False)
     type: Mapped[str] = mapped_column(
-        Enum("shall", "should", "may", name="requirement_type"),
+        value_enum("shall", "should", "may", name="requirement_type"),
         nullable=False,
         default="shall",
     )
     stakes: Mapped[str] = mapped_column(
-        Enum("disqualifying", "scored", "informational", name="matrix_stakes"),
+        value_enum("disqualifying", "scored", "informational", name="matrix_stakes"),
         nullable=False,
         default="scored",
     )
     owner: Mapped[str | None] = mapped_column(String(255), nullable=True)
     response_location: Mapped[str] = mapped_column(String(255), nullable=True, default="")
     status: Mapped[str] = mapped_column(
-        Enum("unassigned", "assigned", "drafted", "in-review", "complete", name="matrix_status"),
+        value_enum("unassigned", "assigned", "drafted", "in-review", "complete", name="matrix_status"),
         nullable=False,
         default="unassigned",
     )

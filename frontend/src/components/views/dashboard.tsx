@@ -46,13 +46,13 @@ export function DashboardView() {
     })[0];
   }, [analyses]);
 
-  const firstName = (user?.name ?? "Amara Osei").split(" ")[0];
+  const firstName = (user?.name ?? "").split(" ")[0];
 
   return (
     <div className="mx-auto max-w-[80rem] space-y-8">
       <PageHeader
         eyebrow="Capture desk"
-        title={`Good to see you, ${firstName}`}
+        title={firstName ? `Good to see you, ${firstName}` : "Good to see you"}
         description={
           stats.blocked > 0
             ? `${pluralize(stats.blocked, "analysis", "analyses")} ${stats.blocked === 1 ? "is" : "are"} blocked on a hard gate, and ${stats.review} findings are still waiting on a human.`

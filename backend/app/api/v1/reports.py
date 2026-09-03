@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 
 from app.core.deps import CurrentUser, DbSession, RedisClient
+from app.core.queue import enqueue
 from app.db.models.analysis import Analysis
 from app.db.models.report import Report
 from app.schemas.resources import ReportGenerateRequest, ReportResponse
@@ -66,6 +67,7 @@ async def generate_report(
     await db.flush()
 
     # Enqueue report generation
+    await enqueue("app.workers.generate_report.generate_report_task", report.id)
     await redis.set(f"report_job:{report.id}", analysis_id, ex=3600)
     if body.idempotency_key:
         await redis.set(f"report_idem:{body.idempotency_key}", report.id, ex=3600)

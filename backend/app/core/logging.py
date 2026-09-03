@@ -18,11 +18,12 @@ def setup_logging() -> None:
     settings = get_settings()
     is_dev = settings.APP_ENV == Environment.DEV
 
+    # Logs are emitted through structlog's own PrintLogger, not the stdlib
+    # `logging` module, so only processors that work on a plain logger belong
+    # here — `add_logger_name` reads `logger.name` and would fail on every line.
     shared_processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.ExtraAdder(),
+        structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.UnicodeDecoder(),

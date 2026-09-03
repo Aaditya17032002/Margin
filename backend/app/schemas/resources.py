@@ -112,6 +112,14 @@ class NotificationUpdate(CamelModel):
     read: bool | None = None
 
 
+class NotificationCreate(CamelModel):
+    kind: Literal["deadline", "review", "mention", "system", "export", "amendment"] = "system"
+    title: str
+    body: str = ""
+    analysis_id: str | None = Field(None, alias="analysisId")
+    href: str | None = None
+
+
 # ── Team ─────────────────────────────────────────────────────────────────
 
 class TeamMemberResponse(CamelModel):
@@ -244,6 +252,13 @@ class ReportResponse(CamelModel):
 
 
 # ── Activity ─────────────────────────────────────────────────────────────
+
+class ActivityCreate(CamelModel):
+    actor: str
+    action: str
+    target: str | None = None
+    analysis_id: str | None = Field(None, alias="analysisId")
+
 
 class ActivityResponse(CamelModel):
     id: str

@@ -47,7 +47,7 @@ export function NotificationsView() {
   const remove = useNotificationsStore((s) => s.remove);
   const restore = useNotificationsStore((s) => s.restore);
   const clearAll = useNotificationsStore((s) => s.clearAll);
-  const resetToSeed = useNotificationsStore((s) => s.resetToSeed);
+  const reload = useNotificationsStore((s) => s.load);
 
   const [filter, setFilter] = React.useState<string>("all");
   const [confirmClear, setConfirmClear] = React.useState(false);
@@ -113,8 +113,8 @@ export function NotificationsView() {
           }
           action={
             items.length === 0 ? (
-              <Button variant="secondary" onClick={resetToSeed}>
-                Restore sample notices
+              <Button variant="secondary" onClick={() => void reload({ force: true })}>
+                Check again
               </Button>
             ) : (
               <Button variant="secondary" onClick={() => setFilter("all")}>

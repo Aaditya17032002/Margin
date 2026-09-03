@@ -44,27 +44,29 @@ export function IntegrationsView() {
   const browseSource = integrations.find((i) => i.id === browsing);
   const browsable = integrations.filter((i) => i.id !== "outlook");
 
-  /** The Microsoft handshake is theatre here, but it should still take a beat. */
   async function runConnect(integration: Integration) {
     setConnecting(integration.id);
-    await new Promise((r) => setTimeout(r, 900));
     connect(integration.id, user?.email);
     setConnecting(null);
     notify.success(`${integration.name} connected.`, {
-      description: `Signed in as ${user?.email ?? "a.osei@thornfield.co"}.`,
+      description: user?.email ? `Signed in as ${user.email}.` : undefined,
     });
   }
 
-  function startFrom(file: FileNode, sourceId: IntegrationId) {
-    const id = createAnalysis({
+  async function startFrom(file: FileNode, sourceId: IntegrationId) {
+    const id = await createAnalysis({
       title: file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " "),
       agency: "Pending intake",
       mode: defaultMode,
       fileName: file.name,
       fileSize: file.size ?? 0,
       source: sourceId,
-      owner: user?.name ?? "Amara Osei",
+      owner: user?.name ?? "",
     });
+    if (!id) {
+      notify.error("The import could not be started.");
+      return;
+    }
     notify.success("Import started.", { description: file.name });
     router.push(`/app/analyses/${id}/run`);
   }
@@ -197,7 +199,7 @@ export function IntegrationsView() {
               <p className="pb-3 font-mono text-2xs uppercase tracking-[0.13em] text-ink-faint">
                 {browseSource.account}
               </p>
-              <FileTree nodes={browseSource.tree} onPick={(node) => startFrom(node, browseSource.id)} />
+              <FileTree nodes={browseSource.tree} onPick={(node) => void startFrom(node, browseSource.id)} />
             </>
           ) : (
             <Well className="flex flex-wrap items-center justify-between gap-4">

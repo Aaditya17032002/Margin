@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, UUIDMixin
+from app.db.base import Base, UUIDMixin, value_enum
 
 
 class Template(UUIDMixin, Base):
@@ -16,7 +16,7 @@ class Template(UUIDMixin, Base):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     kind: Mapped[str] = mapped_column(
-        Enum("report", "boilerplate", "dpa", name="template_kind"),
+        value_enum("report", "boilerplate", "dpa", name="template_kind"),
         nullable=False,
         default="report",
     )
@@ -24,7 +24,7 @@ class Template(UUIDMixin, Base):
     sections: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     format: Mapped[str] = mapped_column(
-        Enum("DOCX", "PDF", "MD", name="template_format"),
+        value_enum("DOCX", "PDF", "MD", name="template_format"),
         nullable=False,
         default="DOCX",
     )

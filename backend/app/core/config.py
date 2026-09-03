@@ -180,6 +180,10 @@ class Settings(BaseSettings):
     # ── Reports ──────────────────────────────────────────────────────────
     REPORTS_DIR: str = "/srv/reports"
 
+    # ── Uploads ──────────────────────────────────────────────────────────
+    UPLOADS_DIR: str = "/srv/uploads"
+    MAX_UPLOAD_BYTES: int = 64 * 1024 * 1024
+
     # ── Rate limits ──────────────────────────────────────────────────────
     RATE_LIMIT_AUTH: str = "5/minute"
     RATE_LIMIT_RUN: str = "10/minute"

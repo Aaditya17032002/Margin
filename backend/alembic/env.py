@@ -6,6 +6,7 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
+import sqlalchemy as sa
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -40,7 +41,7 @@ def do_run_migrations(connection):
     context.configure(connection=connection, target_metadata=target_metadata)
     with context.begin_transaction():
         # Create pgvector extension if not exists
-        connection.execute(context.get_context()._exec("CREATE EXTENSION IF NOT EXISTS vector"))
+        connection.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
         context.run_migrations()
 
 

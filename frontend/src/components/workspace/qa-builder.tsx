@@ -80,15 +80,19 @@ export function QAndABuilder({ analysis }: { analysis: Analysis }) {
     notify.success("Question order updated.");
   }
 
-  function submitDraft() {
+  async function submitDraft() {
     if (draft.trim().length < 8) return;
-    const id = addQuestion({
+    const id = await addQuestion({
       analysisId: analysis.id,
       text: draft.trim(),
       rationale: rationale.trim() || "Added by the capture team.",
       sourceKind: "manual",
       goNoGoImpact: false,
     });
+    if (!id) {
+      notify.error("The question could not be added.");
+      return;
+    }
     setDraft("");
     setRationale("");
     setComposing(false);
@@ -190,7 +194,7 @@ export function QAndABuilder({ analysis }: { analysis: Analysis }) {
               <Button variant="ghost" onClick={() => setComposing(false)}>
                 Cancel
               </Button>
-              <Button variant="primary" onClick={submitDraft} disabled={draft.trim().length < 8}>
+              <Button variant="primary" onClick={() => void submitDraft()} disabled={draft.trim().length < 8}>
                 Add to the set
               </Button>
             </>

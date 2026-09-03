@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import AsyncGenerator
 
 import pytest
@@ -30,11 +29,17 @@ def get_test_settings() -> Settings:
     )
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+@pytest_asyncio.fixture(autouse=True)
+async def fresh_engine():
+    """The async engine is a module-level singleton, and asyncpg connections are
+    bound to the loop that opened them. Each test gets its own loop, so the
+    engine is disposed around every one — otherwise the second test to touch the
+    database inherits pooled connections from a loop that no longer exists."""
+    from app.db.base import dispose_db
+
+    await dispose_db()
+    yield
+    await dispose_db()
 
 
 @pytest_asyncio.fixture

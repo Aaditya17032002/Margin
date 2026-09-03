@@ -366,7 +366,7 @@ function FinalCta() {
               </Button>
             </div>
             <p className="mt-5 text-xs text-ink-faint">
-              No card. The demo workspace is fully populated and every action works.
+              No card. Upload one solicitation and the whole workspace fills from it.
             </p>
           </motion.div>
         </div>

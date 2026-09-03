@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser, DbSession
+from app.core.provisioning import ensure_org_provisioned
 from app.core.rate_limit import limiter
 from app.core.security import (
     AuthUser,
@@ -21,14 +22,17 @@ from app.core.security import (
 )
 from app.db.models.org import Org
 from app.db.models.preference import Preference, DEFAULT_PREFS
+from app.db.models.team_member import TeamMember
 from app.db.models.user import User
 from app.schemas.auth import (
     LoginRequest,
     MeResponse,
     MicrosoftAuthRequest,
     OrgResponse,
+    OrgUpdate,
     RefreshRequest,
     SessionUserResponse,
+    SessionUserUpdate,
     SignupRequest,
     TokenResponse,
 )
@@ -64,11 +68,12 @@ async def signup(body: SignupRequest, db: DbSession):
         signature=f"{body.name} · {body.org}",
     )
     db.add(user)
+    # The org and the user have to exist before anything can reference them:
+    # SQLAlchemy has no relationship here to infer the insert order from.
+    await db.flush()
 
-    # Create default preferences
-    pref = Preference(user_id=user.id, org_id=org.id, data=dict(DEFAULT_PREFS))
-    db.add(pref)
-
+    db.add(Preference(user_id=user.id, org_id=org.id, data=dict(DEFAULT_PREFS)))
+    await ensure_org_provisioned(db, user)
     await db.flush()
 
     return TokenResponse(
@@ -128,6 +133,10 @@ async def me(user: CurrentUser, db: DbSession):
     if not org:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Org not found")
 
+    # Backfill for orgs created before provisioning existed; a no-op afterwards.
+    await ensure_org_provisioned(db, db_user)
+    await db.flush()
+
     return MeResponse(
         user=SessionUserResponse(
             id=db_user.id,
@@ -148,6 +157,63 @@ async def me(user: CurrentUser, db: DbSession):
             duns=org.duns or "",
             cage=org.cage or "",
         ),
+    )
+
+
+@router.patch("/me", response_model=SessionUserResponse)
+async def update_me(body: SessionUserUpdate, user: CurrentUser, db: DbSession):
+    """Edit your own profile. The team roster carries the same name, so it moves
+    with it — a roster that disagrees with the profile is worse than either."""
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    for key, value in body.model_dump(exclude_unset=True, by_alias=False).items():
+        if hasattr(db_user, key):
+            setattr(db_user, key, value)
+
+    member_result = await db.execute(
+        select(TeamMember).where(TeamMember.org_id == user.org_id, TeamMember.email == db_user.email)
+    )
+    member = member_result.scalar_one_or_none()
+    if member:
+        member.name = db_user.name
+        member.title = db_user.title or ""
+
+    await db.flush()
+    return SessionUserResponse(
+        id=db_user.id,
+        name=db_user.name,
+        email=db_user.email,
+        title=db_user.title or "",
+        avatarTone=db_user.avatar_tone or "patina",
+        signature=db_user.signature or "",
+        timezone=db_user.timezone or "America/Chicago",
+    )
+
+
+@router.patch("/org", response_model=OrgResponse)
+async def update_org(body: OrgUpdate, user: CurrentUser, db: DbSession):
+    result = await db.execute(select(Org).where(Org.id == user.org_id))
+    org = result.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Org not found")
+
+    for key, value in body.model_dump(exclude_unset=True, by_alias=False).items():
+        if hasattr(org, key):
+            setattr(org, key, value)
+
+    await db.flush()
+    return OrgResponse(
+        id=org.id,
+        name=org.name,
+        domain=org.domain,
+        plan=org.plan,
+        seats=org.seats,
+        seatsUsed=org.seats_used,
+        duns=org.duns or "",
+        cage=org.cage or "",
     )
 
 
@@ -178,6 +244,10 @@ async def microsoft_auth(body: MicrosoftAuthRequest, db: DbSession):
             )
             db.add(user)
             await db.flush()
+            db.add(Preference(user_id=user.id, org_id=org.id, data=dict(DEFAULT_PREFS)))
+
+        await ensure_org_provisioned(db, user)
+        await db.flush()
 
         return TokenResponse(
             access_token=create_token(user_id=user.id, org_id=user.org_id, role=user.role, token_type=TokenType.ACCESS),

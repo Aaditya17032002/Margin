@@ -7,12 +7,14 @@ import uuid
 from datetime import UTC, datetime
 from typing import AsyncGenerator
 
+import orjson
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import ORJSONResponse
 from sqlalchemy import select, update
 from sse_starlette.sse import EventSourceResponse
 
 from app.core.deps import CurrentUser, DbSession, RedisClient
+from app.core.queue import enqueue
 from app.core.security import RequireRole
 from app.db.models.analysis import Analysis
 from app.schemas.analysis import (
@@ -27,7 +29,7 @@ from app.schemas.analysis import (
 router = APIRouter(prefix="/analyses", tags=["analyses"])
 
 
-def _to_response(a: Analysis) -> dict:
+def _to_response(a: Analysis, *, with_pages: bool = True) -> dict:
     """Convert an Analysis ORM object to the frontend-compatible dict."""
     return {
         "id": a.id,
@@ -67,7 +69,7 @@ def _to_response(a: Analysis) -> dict:
         "dates": a.dates or [],
         "clins": a.clins or [],
         "amendments": a.amendments or [],
-        "pages": a.pages or [],
+        "pages": (a.pages or []) if with_pages else [],
         "versions": a.versions or [],
     }
 
@@ -92,7 +94,7 @@ async def list_analyses(
 
     items = []
     for a in analyses:
-        d = _to_response(a)
+        d = _to_response(a, with_pages=False)
         if tag and tag not in d.get("tags", []):
             continue
         items.append(d)
@@ -176,6 +178,22 @@ async def delete_analysis(analysis_id: str, user: CurrentUser, db: DbSession):
     await db.flush()
 
 
+@router.post("/{analysis_id}/restore")
+async def restore_analysis(analysis_id: str, user: CurrentUser, db: DbSession):
+    """Undo a delete. Deletes are soft, so this is the same row coming back with
+    the id every citation and matrix row still points at."""
+    result = await db.execute(
+        select(Analysis).where(Analysis.id == analysis_id, Analysis.org_id == user.org_id)
+    )
+    analysis = result.scalar_one_or_none()
+    if not analysis:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found")
+    analysis.deleted_at = None
+    analysis.updated_at = datetime.now(UTC)
+    await db.flush()
+    return _to_response(analysis)
+
+
 @router.post("/{analysis_id}/run")
 async def run_analysis(analysis_id: str, body: RunRequest, user: CurrentUser, db: DbSession, redis: RedisClient):
     result = await db.execute(
@@ -191,18 +209,25 @@ async def run_analysis(analysis_id: str, body: RunRequest, user: CurrentUser, db
         if existing:
             return {"jobId": existing, "status": "already_enqueued"}
 
-    job_id = str(uuid.uuid4())
+    job_id = await enqueue("app.workers.run_analysis.run_analysis_task", analysis_id)
+    if job_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The analysis queue is unavailable. Try again once the worker is running.",
+        )
+
     analysis.stage = "analyzing"
     analysis.updated_at = datetime.now(UTC)
     await db.flush()
 
-    # Enqueue to Arq (in dev/mock, the worker picks it up)
     await redis.set(f"run_job:{job_id}", analysis_id, ex=3600)
     if body.idempotency_key:
         await redis.set(f"run_idem:{body.idempotency_key}", job_id, ex=3600)
 
-    # Publish initial event
-    await redis.publish(f"analysis:{analysis_id}:events", f'{{"event":"run_enqueued","jobId":"{job_id}"}}')
+    await redis.publish(
+        f"analysis:{analysis_id}:events",
+        orjson.dumps({"event": "run_enqueued", "agent": "orchestrator", "jobId": job_id}).decode(),
+    )
 
     return {"jobId": job_id, "status": "enqueued"}
 
@@ -285,6 +310,11 @@ async def analysis_events(analysis_id: str, user: CurrentUser, redis: RedisClien
     async def event_generator() -> AsyncGenerator[dict, None]:
         pubsub = redis.pubsub()
         await pubsub.subscribe(f"analysis:{analysis_id}:events")
+        # Redis pub/sub has no replay, so a client that asks for a run before
+        # this subscription exists never hears the agents work. This frame is
+        # the handshake it waits on — response headers are sent earlier than
+        # the subscribe above completes, so they cannot serve as the signal.
+        yield {"event": "message", "data": orjson.dumps({"event": "stream_ready"}).decode()}
         try:
             while True:
                 message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)

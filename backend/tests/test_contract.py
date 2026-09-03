@@ -125,3 +125,36 @@ class TestPrefsContract:
             schema_fields.add(alias)
         missing = frontend_fields - schema_fields
         assert not missing, f"PrefsResponse missing fields: {missing}"
+
+
+class TestAnalysisListItemContract:
+    """The board reads findings, gates, risks and dates straight off list items.
+
+    A lighter list shape that dropped those arrays does not fail a type check —
+    it crashes the Kanban card at runtime on `undefined.filter`, which is how
+    this regression arrived the first time.
+    """
+
+    REQUIRED_ON_THE_BOARD = (
+        "identity",
+        "scope",
+        "legal",
+        "eligibility",
+        "pricing",
+        "postAward",
+        "gates",
+        "evaluation",
+        "risks",
+        "silent",
+        "dates",
+        "versions",
+    )
+
+    def test_list_item_carries_every_array_the_board_reads(self):
+        fields = AnalysisListItem.model_fields
+        aliases = {f.alias or name for name, f in fields.items()}
+        missing = [name for name in self.REQUIRED_ON_THE_BOARD if name not in aliases]
+        assert not missing, f"list items are missing {missing}"
+
+    def test_list_item_is_the_full_analysis_shape(self):
+        assert set(AnalysisResponse.model_fields) == set(AnalysisListItem.model_fields)

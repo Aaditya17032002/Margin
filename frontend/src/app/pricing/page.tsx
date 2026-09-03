@@ -78,8 +78,8 @@ export default function PricingPage() {
           <div className="mx-auto max-w-3xl px-5 text-center lg:px-8">
             <h2 className="display-tight text-3xl text-ink">Read one before you decide.</h2>
             <p className="mx-auto mt-4 max-w-lg text-base leading-relaxed text-ink-soft">
-              The demo workspace is fully populated with six live solicitations. Every button works, including the
-              ones that would cost you money.
+              Create a workspace and give Margin one solicitation. Every finding it returns points at the clause it
+              came from, and you can check each one yourself.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Button asChild variant="primary" size="lg">

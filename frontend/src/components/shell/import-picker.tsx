@@ -31,16 +31,20 @@ export function ImportPicker() {
   const [sourceId, setSourceId] = React.useState<IntegrationId>("sharepoint");
   const source = integrations.find((i) => i.id === sourceId);
 
-  function startFrom(file: FileNode) {
-    const id = createAnalysis({
+  async function startFrom(file: FileNode) {
+    const id = await createAnalysis({
       title: file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " "),
       agency: "Pending intake",
       mode: defaultMode,
       fileName: file.name,
       fileSize: file.size ?? 0,
       source: sourceId,
-      owner: user?.name ?? "Amara Osei",
+      owner: user?.name ?? "",
     });
+    if (!id) {
+      notify.error("The import could not be started.");
+      return;
+    }
     setOpen(false);
     notify.success("Import started.", { description: `${file.name} is queued for a ${defaultMode.replace("-", " ")} read.` });
     router.push(`/app/analyses/${id}/run`);
@@ -82,7 +86,7 @@ export function ImportPicker() {
             <p className="pb-2 font-mono text-2xs uppercase tracking-[0.13em] text-ink-faint">
               {source.account}
             </p>
-            <FileTree nodes={source.tree} onPick={startFrom} />
+            <FileTree nodes={source.tree} onPick={(node) => void startFrom(node)} />
           </div>
         )}
       </SheetContent>

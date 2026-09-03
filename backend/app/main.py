@@ -10,6 +10,7 @@ from fastapi.responses import ORJSONResponse
 
 from app.core.config import get_settings
 from app.core.deps import close_redis, init_redis
+from app.core.queue import close_queue, init_queue
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import RequestIdMiddleware, setup_logging, get_logger
 from app.core.rate_limit import limiter
@@ -33,9 +34,17 @@ async def lifespan(app: FastAPI):
     await init_redis(settings.REDIS_URL)
     logger.info("redis_connected")
 
+    # Init the task queue the API enqueues onto
+    try:
+        await init_queue()
+        logger.info("queue_connected")
+    except Exception as exc:  # noqa: BLE001 — the API still serves reads without a worker
+        logger.error("queue_connect_failed", error=str(exc))
+
     yield
 
     # Shutdown
+    await close_queue()
     await close_redis()
     await dispose_db()
     logger.info("shutdown_complete")
@@ -74,6 +83,7 @@ def create_app() -> FastAPI:
     from app.api.v1 import (
         auth,
         analyses,
+        documents,
         matrix,
         questions,
         findings,
@@ -93,6 +103,7 @@ def create_app() -> FastAPI:
     prefix = settings.API_V1_PREFIX
     app.include_router(auth.router, prefix=prefix)
     app.include_router(analyses.router, prefix=prefix)
+    app.include_router(documents.router, prefix=prefix)
     app.include_router(matrix.router, prefix=prefix)
     app.include_router(questions.router, prefix=prefix)
     app.include_router(findings.router, prefix=prefix)

@@ -287,8 +287,9 @@ export function AnalysesBoardView() {
                 analyses={filtered.filter((a) => a.stage === stage)}
                 onDelete={(id) => setConfirmDelete(id)}
                 onDuplicate={(id) => {
-                  const newId = duplicateAnalysis(id);
-                  if (newId) notify.success("Analysis duplicated.", { description: "The copy starts at Triage." });
+                  void duplicateAnalysis(id).then((newId) => {
+                    if (newId) notify.success("Analysis duplicated.", { description: "The copy starts at Triage." });
+                  });
                 }}
               />
             ))}

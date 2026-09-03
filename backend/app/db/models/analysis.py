@@ -8,11 +8,11 @@ result into these JSONB arrays before exposing via the API.
 
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, Enum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, SoftDeleteMixin, UUIDMixin
+from app.db.base import Base, SoftDeleteMixin, UUIDMixin, value_enum
 
 
 class Analysis(UUIDMixin, SoftDeleteMixin, Base):
@@ -24,12 +24,12 @@ class Analysis(UUIDMixin, SoftDeleteMixin, Base):
     agency: Mapped[str] = mapped_column(String(255), nullable=False)
     sub_agency: Mapped[str | None] = mapped_column(String(255), nullable=True)
     doc_type: Mapped[str] = mapped_column(
-        Enum("RFP", "RFI", "RFQ", "IFB", "Sources Sought", "BAA", "Task Order", name="doc_type"),
+        value_enum("RFP", "RFI", "RFQ", "IFB", "Sources Sought", "BAA", "Task Order", name="doc_type"),
         nullable=False,
         default="RFP",
     )
     mode: Mapped[str] = mapped_column(
-        Enum(
+        value_enum(
             "quick-triage", "standard", "deep-research", "matrix-only",
             "qa-only", "amendment-refresh", "recompete-compare",
             name="analysis_mode",
@@ -38,12 +38,12 @@ class Analysis(UUIDMixin, SoftDeleteMixin, Base):
         default="standard",
     )
     stage: Mapped[str] = mapped_column(
-        Enum("triage", "analyzing", "review", "decided", name="analysis_stage"),
+        value_enum("triage", "analyzing", "review", "decided", name="analysis_stage"),
         nullable=False,
         default="triage",
     )
     go_no_go: Mapped[str] = mapped_column(
-        Enum("bid", "no-bid", "watch", "undecided", name="go_no_go"),
+        value_enum("bid", "no-bid", "watch", "undecided", name="go_no_go"),
         nullable=False,
         default="undecided",
     )
@@ -64,7 +64,7 @@ class Analysis(UUIDMixin, SoftDeleteMixin, Base):
     file_name: Mapped[str] = mapped_column(String(500), nullable=True, default="")
     file_size: Mapped[int] = mapped_column(BigInteger, nullable=True, default=0)
     source: Mapped[str] = mapped_column(
-        Enum("upload", "sharepoint", "onedrive", "outlook", name="analysis_source"),
+        value_enum("upload", "sharepoint", "onedrive", "outlook", name="analysis_source"),
         nullable=False,
         default="upload",
     )

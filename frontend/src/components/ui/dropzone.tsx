@@ -11,6 +11,8 @@ export interface DroppedFile {
   id: string;
   name: string;
   size: number;
+  /** The file itself, so the caller can upload it rather than re-prompt. */
+  file: File;
 }
 
 export function Dropzone({
@@ -34,6 +36,7 @@ export function Dropzone({
       id: `${file.name}-${file.size}-${file.lastModified}`,
       name: file.name,
       size: file.size,
+      file,
     }));
     const merged = [...files];
     for (const file of next) if (!merged.some((f) => f.id === file.id)) merged.push(file);

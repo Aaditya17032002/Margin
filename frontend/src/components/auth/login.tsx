@@ -40,7 +40,7 @@ export function LoginView() {
 
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { email: "a.osei@thornfield.co", password: "margin2026", remember: true },
+    defaultValues: { email: "", password: "", remember: true },
   });
 
   async function onSubmit(values: Values) {
@@ -198,8 +198,8 @@ export function LoginView() {
       </form>
 
       <p className="mt-5 text-xs leading-relaxed text-ink-faint">
-        This is a demonstration. Any well-formed email and a password of six characters or more will get you in —
-        the fields are pre-filled so you can simply continue.
+        Accounts are real. If this is your first visit, create one — a new workspace starts empty and fills
+        with what Margin reads.
       </p>
     </AuthFrame>
   );

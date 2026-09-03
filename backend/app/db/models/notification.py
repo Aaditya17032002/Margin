@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Enum, ForeignKey, String, Text
+from sqlalchemy import Boolean, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, UUIDMixin
+from app.db.base import Base, UUIDMixin, value_enum
 
 
 class Notification(UUIDMixin, Base):
@@ -15,7 +15,7 @@ class Notification(UUIDMixin, Base):
     org_id: Mapped[str] = mapped_column(ForeignKey("orgs.id"), nullable=False, index=True)
 
     kind: Mapped[str] = mapped_column(
-        Enum("deadline", "review", "mention", "system", "export", "amendment", name="notification_kind"),
+        value_enum("deadline", "review", "mention", "system", "export", "amendment", name="notification_kind"),
         nullable=False,
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)

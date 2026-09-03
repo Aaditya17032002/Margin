@@ -11,6 +11,7 @@ import { GlobalShortcuts, ShortcutsDialog } from "./shortcuts";
 import { ImportPicker } from "./import-picker";
 import { MarginRail } from "./margin-rail";
 import { Coachmarks } from "./coachmarks";
+import { useWorkspaceData } from "@/hooks/use-workspace-data";
 import { usePrefsStore } from "@/stores/workspace";
 import { useUIStore } from "@/stores/ui";
 
@@ -23,6 +24,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const density = usePrefsStore((s) => s.density);
   const closeRail = useUIStore((s) => s.closeRail);
+
+  useWorkspaceData();
 
   // A source that belonged to the previous screen has no business surviving it.
   React.useEffect(() => {
