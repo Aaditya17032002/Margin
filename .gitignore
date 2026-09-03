@@ -1,0 +1,43 @@
+# Secrets & local env
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env.local
+!.env.example
+
+# Python
+backend/.venv/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/*.egg-info/
+backend/.data/
+
+# Node / Next
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/coverage/
+frontend/.turbo/
+**/*.tsbuildinfo
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.pem
+
+# Logs & artifacts
+*.log
+npm-debug.log*
+shots/
+frontend/shots/
+frontend/eslint-report.json
+
+# Docker volumes / local
+pgdata/

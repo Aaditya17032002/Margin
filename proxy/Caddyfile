@@ -1,0 +1,67 @@
+# Margin — Caddy Reverse Proxy Configuration
+#
+# The only service bound to host ports.
+# Routes /api/* to the backend, everything else to the frontend.
+
+{
+	# In dev, Caddy's auto HTTPS is overridden by the CADDY_GLOBAL_OPTIONS env var
+}
+
+:80, :443 {
+	# ── Security Headers ─────────────────────────────────────────────
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss: ws:; font-src 'self' data:; frame-ancestors 'none'"
+		-Server
+	}
+
+	# ── Compression ──────────────────────────────────────────────────
+	encode gzip zstd
+
+	# ── API routes → Backend ─────────────────────────────────────────
+	handle /api/* {
+		reverse_proxy backend:8000 {
+			# SSE-friendly: disable buffering, long timeouts
+			flush_interval -1
+			transport http {
+				read_timeout 300s
+				write_timeout 300s
+			}
+		}
+	}
+
+	# ── Health/Ready/Metrics → Backend ───────────────────────────────
+	handle /health {
+		reverse_proxy backend:8000
+	}
+	handle /ready {
+		reverse_proxy backend:8000
+	}
+	handle /metrics {
+		reverse_proxy backend:8000
+	}
+
+	# ── Everything else → Frontend ───────────────────────────────────
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	# ── Rate limiting ────────────────────────────────────────────────
+	@auth_paths path /api/v1/auth/*
+	rate_limit @auth_paths {
+		zone auth_zone {
+			key {remote_host}
+			events 10
+			window 1m
+		}
+	}
+
+	# ── Logging ──────────────────────────────────────────────────────
+	log {
+		output stdout
+		format json
+	}
+}

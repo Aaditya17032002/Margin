@@ -1,0 +1,425 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   Margin — token sheet
+   Warm editorial / civic. Fine paper, ink, and the patina of bronze.
+   Colours are authored in OKLCH; the sRGB hex each was derived from is kept
+   in a comment so the palette stays auditable against the brand sheet.
+   ========================================================================== */
+
+:root,
+[data-appearance="paper"] {
+  color-scheme: light;
+
+  /* Surfaces — warm paper, never stark white */
+  --paper: oklch(96.18% 0.0127 86.83); /* #F6F2E9 */
+  --paper-raised: oklch(98.5% 0.0082 91.48); /* #FCFAF4 */
+  --paper-sunk: oklch(93.74% 0.0181 89.36); /* #EFEADD */
+  --line: oklch(89.62% 0.0244 85.79); /* #E4DCCB */
+  --line-strong: oklch(84.47% 0.0347 86.31); /* #D6CBB3 */
+
+  /* Ink — warm near-black, three levels */
+  --ink: oklch(23.32% 0.0127 78); /* #211D17 */
+  --ink-soft: oklch(44.63% 0.0217 78.05); /* #5B5347 */
+  --ink-faint: oklch(60.47% 0.024 76.41); /* #8A8072 */
+
+  /* Primary — verdigris / patina */
+  --patina: oklch(49.63% 0.0685 179.19); /* #2F6F63 */
+  --patina-hover: oklch(43.56% 0.0591 179.24); /* #275C52 */
+  --patina-tint: oklch(94.72% 0.0109 167.79); /* #E7F0EC */
+  --patina-ink: oklch(98.5% 0.0082 91.48);
+
+  /* Semantics — a warm civic set */
+  --seal: oklch(46.55% 0.1466 27.06); /* #9B2D28 */
+  --seal-tint: oklch(92.56% 0.0191 29.55); /* #F3E2DF */
+  --ochre: oklch(62.26% 0.1232 72.12); /* #B4791E */
+  --ochre-tint: oklch(94.51% 0.031 86.46); /* #F6ECD6 */
+  --leaf: oklch(53.63% 0.0925 152.6); /* #3F7D53 */
+  --leaf-tint: oklch(94.48% 0.0197 135.83); /* #E7F0E3 */
+  --slate: oklch(47.44% 0.0855 260.07); /* #3F5C8C */
+  --slate-tint: oklch(93.28% 0.0133 262.38); /* #E4E9F2 */
+
+  --gold-highlight: rgba(235, 217, 160, 0.55);
+  --gold-highlight-edge: rgba(190, 158, 74, 0.5);
+
+  /* Depth — warm, low, never a gray box-shadow */
+  --shadow-hairline: 0 0 0 1px var(--line);
+  --shadow-raised: 0 1px 1px oklch(23.32% 0.0127 78 / 0.03),
+    0 4px 12px -6px oklch(23.32% 0.0127 78 / 0.1);
+  --shadow-float: 0 1px 1px oklch(23.32% 0.0127 78 / 0.04),
+    0 12px 32px -12px oklch(23.32% 0.0127 78 / 0.18);
+  --shadow-overlay: 0 24px 64px -24px oklch(23.32% 0.0127 78 / 0.28),
+    0 2px 8px -4px oklch(23.32% 0.0127 78 / 0.1);
+
+  --grain-opacity: 0.5;
+}
+
+/* Low-light variant: warm dim parchment, not a cold neon dark mode. */
+[data-appearance="dusk"] {
+  color-scheme: dark;
+
+  --paper: oklch(21.5% 0.012 72);
+  --paper-raised: oklch(25.5% 0.014 74);
+  --paper-sunk: oklch(18.5% 0.011 70);
+  --line: oklch(31% 0.016 74);
+  --line-strong: oklch(39% 0.021 76);
+
+  --ink: oklch(93.5% 0.018 88);
+  --ink-soft: oklch(76% 0.021 84);
+  --ink-faint: oklch(60% 0.02 80);
+
+  --patina: oklch(75% 0.077 172);
+  --patina-hover: oklch(82% 0.082 172);
+  --patina-tint: oklch(29% 0.032 174);
+  --patina-ink: oklch(18.5% 0.011 70);
+
+  --seal: oklch(74% 0.106 27);
+  --seal-tint: oklch(28% 0.05 27);
+  --ochre: oklch(80% 0.106 76);
+  --ochre-tint: oklch(29% 0.048 76);
+  --leaf: oklch(79% 0.084 152);
+  --leaf-tint: oklch(28% 0.043 152);
+  --slate: oklch(76% 0.073 258);
+  --slate-tint: oklch(29% 0.04 258);
+
+  --gold-highlight: rgba(214, 178, 94, 0.26);
+  --gold-highlight-edge: rgba(214, 178, 94, 0.44);
+
+  --shadow-raised: 0 1px 1px oklch(0% 0 0 / 0.3), 0 4px 12px -6px oklch(0% 0 0 / 0.5);
+  --shadow-float: 0 1px 1px oklch(0% 0 0 / 0.35), 0 12px 32px -12px oklch(0% 0 0 / 0.6);
+  --shadow-overlay: 0 24px 64px -24px oklch(0% 0 0 / 0.7), 0 2px 8px -4px oklch(0% 0 0 / 0.4);
+
+  --grain-opacity: 0.28;
+}
+
+/* Accessibility variant: pushes every pairing well past AA. */
+[data-appearance="contrast"] {
+  color-scheme: light;
+
+  --paper: oklch(99.5% 0.003 90);
+  --paper-raised: oklch(100% 0 0);
+  --paper-sunk: oklch(96% 0.006 90);
+  --line: oklch(66% 0.012 86);
+  --line-strong: oklch(45% 0.014 86);
+
+  --ink: oklch(14% 0.008 78);
+  --ink-soft: oklch(30% 0.014 78);
+  --ink-faint: oklch(40% 0.016 78);
+
+  --patina: oklch(38% 0.062 179);
+  --patina-hover: oklch(30% 0.05 179);
+  --patina-tint: oklch(93% 0.014 168);
+
+  --seal: oklch(36% 0.15 27);
+  --ochre: oklch(46% 0.11 72);
+  --leaf: oklch(40% 0.09 152);
+  --slate: oklch(36% 0.09 260);
+
+  --grain-opacity: 0;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-raised: var(--paper-raised);
+  --color-paper-sunk: var(--paper-sunk);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-faint: var(--ink-faint);
+
+  --color-patina: var(--patina);
+  --color-patina-hover: var(--patina-hover);
+  --color-patina-tint: var(--patina-tint);
+  --color-patina-ink: var(--patina-ink);
+
+  --color-seal: var(--seal);
+  --color-seal-tint: var(--seal-tint);
+  --color-ochre: var(--ochre);
+  --color-ochre-tint: var(--ochre-tint);
+  --color-leaf: var(--leaf);
+  --color-leaf-tint: var(--leaf-tint);
+  --color-slate: var(--slate);
+  --color-slate-tint: var(--slate-tint);
+
+  --font-display: var(--font-fraunces), "Iowan Old Style", Georgia, serif;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
+
+  /* Modular scale, 1.2 minor third at the body end, opening up for display. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1.1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.15rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.3rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.6;
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.55;
+  --text-xl: 1.3125rem;
+  --text-xl--line-height: 1.4;
+  --text-2xl: 1.625rem;
+  --text-2xl--line-height: 1.28;
+  --text-3xl: 2.0625rem;
+  --text-3xl--line-height: 1.16;
+  --text-4xl: 2.625rem;
+  --text-4xl--line-height: 1.08;
+  --text-5xl: 3.375rem;
+  --text-5xl--line-height: 1.04;
+  --text-6xl: 4.25rem;
+  --text-6xl--line-height: 1;
+
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 20px;
+
+  --shadow-raised: var(--shadow-raised);
+  --shadow-float: var(--shadow-float);
+  --shadow-overlay: var(--shadow-overlay);
+
+  --ease-editorial: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  --animate-rise: rise 260ms var(--ease-editorial) both;
+  --animate-fade: fade 180ms var(--ease-editorial) both;
+  --animate-shimmer: shimmer 1.6s var(--ease-editorial) infinite;
+  --animate-ticker: ticker 240ms var(--ease-editorial) both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -140% 0;
+  }
+  100% {
+    background-position: 240% 0;
+  }
+}
+
+@keyframes ticker {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--line);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    background-color: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: 1.6;
+    font-feature-settings: "cv01", "cv03", "ss03";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Paper grain — a single fixed layer, never repeated per-card. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: var(--grain-opacity);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)' opacity='0.22'/%3E%3C/svg%3E");
+    mix-blend-mode: multiply;
+  }
+
+  [data-appearance="dusk"] body::before {
+    mix-blend-mode: overlay;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    letter-spacing: -0.014em;
+    font-variation-settings: "SOFT" 12, "WONK" 0;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--patina);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
+
+  ::selection {
+    background: var(--gold-highlight);
+    color: var(--ink);
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--line-strong) 80%, transparent);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--ink-faint);
+    background-clip: content-box;
+  }
+}
+
+@layer utilities {
+  /* The citation highlight — a soft gold wash with an inked lower edge,
+     the way a reader would run a highlighter across a printed clause. */
+  .highlight-clause {
+    background: linear-gradient(
+      to bottom,
+      transparent 8%,
+      var(--gold-highlight) 8%,
+      var(--gold-highlight) 92%,
+      transparent 92%
+    );
+    box-shadow: inset 0 -1px 0 var(--gold-highlight-edge);
+    border-radius: 2px;
+  }
+
+  .rule-edge {
+    box-shadow: inset 0 -1px 0 var(--line);
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .display-tight {
+    letter-spacing: -0.028em;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .shimmer {
+    background-image: linear-gradient(
+      100deg,
+      transparent 20%,
+      color-mix(in oklab, var(--paper-raised) 90%, white) 42%,
+      transparent 64%
+    );
+    background-size: 220% 100%;
+    animation: var(--animate-shimmer);
+  }
+
+  /* Ink saturation tied to a finding's confidence. */
+  .ink-confidence {
+    color: color-mix(in oklab, var(--ink) calc(var(--confidence, 1) * 100%), var(--ink-faint));
+  }
+
+  /* A sheet that should read as paper in its own right — used sparingly, on
+     surfaces that stand in for a printed page. */
+  .paper-grain {
+    position: relative;
+    isolation: isolate;
+  }
+  .paper-grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: calc(var(--grain-opacity) * 0.9);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23p)' opacity='0.2'/%3E%3C/svg%3E");
+    mix-blend-mode: multiply;
+    border-radius: inherit;
+  }
+  [data-appearance="dusk"] .paper-grain::after {
+    mix-blend-mode: overlay;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Motion is a courtesy, not a requirement. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  body::before {
+    display: none;
+  }
+}

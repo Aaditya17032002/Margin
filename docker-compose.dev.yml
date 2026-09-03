@@ -1,0 +1,74 @@
+# Margin — Dev Compose Override
+# Run: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  proxy:
+    # Dev: use HTTP only (no TLS warnings)
+    environment:
+      - CADDY_GLOBAL_OPTIONS=auto_https off
+
+  frontend:
+    build:
+      target: frontend-build
+    command: npm run dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+    read_only: false
+
+  backend:
+    build:
+      target: py-base
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/srv
+    environment:
+      - DEBUG=true
+      - PROVIDER_MODE=mock
+      - LOG_LEVEL=DEBUG
+    ports:
+      - "127.0.0.1:8000:8000"
+    read_only: false
+
+  worker:
+    build:
+      target: py-base
+    command: uv run arq app.workers.settings.WorkerSettings
+    volumes:
+      - ./backend:/srv
+    environment:
+      - DEBUG=true
+      - PROVIDER_MODE=mock
+    read_only: false
+
+  db:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  # ── Seed runner (one-shot) ──────────────────────────────────────────
+  seed:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: py-base
+    command: uv run python -m app.db.seed
+    volumes:
+      - ./backend:/srv
+    environment:
+      - DB_HOST=db
+      - REDIS_HOST=redis
+      - PROVIDER_MODE=mock
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+    profiles:
+      - seed
