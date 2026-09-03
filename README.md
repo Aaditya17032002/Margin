@@ -17,7 +17,7 @@ Internet ──▶ Caddy :80/:443 ──┬──▶ frontend:3000   (Next.js Ap
 ```
 
 - **Reverse Proxy**: Caddy terminating TLS, enforcing CSP/HSTS/security headers, and proxying `/api/*` to backend and `/*` to frontend with SSE-friendly streaming.
-- **Frontend**: Next.js 15 App Router with Zustand stores.
+- **Frontend**: Next.js App Router with Zustand stores over a single typed API client. The browser only ever calls its own origin — Caddy answers `/api/*`, and `next dev` rewrites it — so there is no CORS surface.
 - **Backend**: FastAPI (Python 3.12+ async), SQLAlchemy 2.0 async, Alembic, Pydantic v2.
 - **Agentic Layer**: Schema-first Analysis Spec (Sections A–M), specialist agents (Intake, Scope, Compliance, Eligibility, Evaluation, Risk, Pricing, Q&A), and Citation Verifier.
 - **Task Queue**: Arq + Redis for long-running analysis and DOCX report generation.
@@ -35,6 +35,9 @@ cp .env.example .env
 
 # 2. Start the complete stack
 docker compose up --build
+
+# 3. Apply the database schema
+docker compose exec backend uv run alembic upgrade head
 ```
 
 Access the app at:
@@ -57,6 +60,26 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile seed up
 ```
 
 ---
+
+## Starting From Nothing
+
+A new account starts with an empty workspace — no analyses, no requirements, no
+institutional memory. Signing up provisions two things only: your own entry on
+the team roster, and the three integration rows (Outlook, SharePoint, OneDrive)
+so there is something to connect.
+
+Everything else arrives by reading:
+
+1. `/app/analyses/new` — upload a solicitation (PDF, DOCX, or text)
+2. The document is stored with its extracted text, and a run is queued
+3. The reading room streams the agent roster live over SSE while the worker works
+4. When the worker commits, the analysis carries findings, eligibility gates,
+   evaluation factors and risks; the compliance matrix and Q&A set are written as
+   their own records; a notification and an audit entry are raised
+
+Signing up from a mail domain someone else already used creates a **separate**
+workspace rather than joining theirs — a mail domain is not proof of belonging.
+Colleagues join through Team → Invite.
 
 ## Running Offline (Mock Provider)
 

@@ -73,7 +73,7 @@ export function OnboardingView() {
 
   function finish() {
     completeOnboarding();
-    notify.success("You're set up.", { description: "Six solicitations are waiting in the workspace." });
+    notify.success("You're set up.", { description: "Upload a solicitation and Margin starts reading." });
     router.push("/app");
   }
 

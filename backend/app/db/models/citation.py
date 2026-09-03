@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Enum, ForeignKey, Integer, String
+from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, UUIDMixin
+from app.db.base import Base, UUIDMixin, value_enum
 
 
 class Citation(UUIDMixin, Base):
@@ -14,7 +14,7 @@ class Citation(UUIDMixin, Base):
 
     finding_id: Mapped[str] = mapped_column(ForeignKey("findings.id", ondelete="CASCADE"), nullable=False, index=True)
     source: Mapped[str] = mapped_column(
-        Enum("solicitation", "web", name="citation_source"),
+        value_enum("solicitation", "web", name="citation_source"),
         nullable=False,
         default="solicitation",
     )

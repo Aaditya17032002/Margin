@@ -106,20 +106,11 @@ class AnalysisResponse(CamelModel):
     versions: list[VersionRecord]
 
 
-class AnalysisListItem(CamelModel):
-    """Lighter shape for list views — no nested finding arrays."""
-    id: str
-    title: str
-    solicitation_number: str = Field(alias="solicitationNumber")
-    agency: str
-    doc_type: str = Field(alias="docType")
-    mode: str
-    stage: str
-    go_no_go: str = Field(alias="goNoGo")
-    created_at: str = Field(alias="createdAt")
-    updated_at: str = Field(alias="updatedAt")
-    owner: str
-    estimated_value: float = Field(alias="estimatedValue")
-    file_name: str = Field(alias="fileName")
-    source: str
-    tags: list[str]
+class AnalysisListItem(AnalysisResponse):
+    """The board shape.
+
+    Everything the portfolio views read — findings, gates, risks, key dates —
+    minus the document body, which is the one genuinely large array and is only
+    ever rendered inside a single analysis. `pages` is sent empty; opening an
+    analysis fetches the full record.
+    """

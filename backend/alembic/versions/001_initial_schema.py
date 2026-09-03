@@ -124,6 +124,8 @@ def upgrade() -> None:
     op.create_index("ix_documents_analysis_id", "documents", ["analysis_id"])
 
     # 6. Doc Chunks with vector(1536)
+    # asyncpg prepares every statement, and a prepared statement holds exactly
+    # one command — so each of these is issued on its own.
     op.execute(
         """
         CREATE TABLE doc_chunks (
@@ -139,11 +141,11 @@ def upgrade() -> None:
             embedding vector(1536),
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-        CREATE INDEX ix_doc_chunks_analysis_id ON doc_chunks(analysis_id);
-        CREATE INDEX ix_doc_chunks_document_id ON doc_chunks(document_id);
+        )
         """
     )
+    op.execute("CREATE INDEX ix_doc_chunks_analysis_id ON doc_chunks(analysis_id)")
+    op.execute("CREATE INDEX ix_doc_chunks_document_id ON doc_chunks(document_id)")
 
     # 7. Matrix Rows
     op.create_table(

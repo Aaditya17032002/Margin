@@ -4,6 +4,8 @@ import { immer } from "zustand/middleware/immer";
 
 import { ApiError, authApi, clearTokens, setTokens } from "@/lib/api";
 import { persistConfig } from "./persist";
+import { fireAndForget } from "./remote";
+import { clearWorkspace } from "./workspace-lifecycle";
 import type { Org, SessionUser } from "@/types";
 
 interface SessionState {
@@ -32,25 +34,8 @@ async function hydrateSession(
     set((s) => {
       s.status = "idle";
       s.error = null;
-      s.user = {
-        id: me.user.id,
-        name: me.user.name,
-        email: me.user.email,
-        title: me.user.title,
-        avatarTone: me.user.avatarTone as SessionUser["avatarTone"],
-        signature: me.user.signature,
-        timezone: me.user.timezone,
-      };
-      s.org = {
-        id: me.org.id,
-        name: me.org.name,
-        domain: me.org.domain,
-        plan: me.org.plan,
-        seats: me.org.seats,
-        seatsUsed: me.org.seatsUsed,
-        duns: me.org.duns,
-        cage: me.org.cage,
-      };
+      s.user = me.user;
+      s.org = me.org;
       s.isAuthenticated = true;
     });
     return true;
@@ -149,6 +134,7 @@ export const useSessionStore = create<SessionState>()(
       logout: () => {
         void authApi.logout().catch(() => undefined);
         clearTokens();
+        clearWorkspace();
         set((s) => {
           s.user = null;
           s.org = null;
@@ -158,15 +144,19 @@ export const useSessionStore = create<SessionState>()(
         });
       },
 
-      updateUser: (patch) =>
+      updateUser: (patch) => {
         set((s) => {
           if (s.user) Object.assign(s.user, patch);
-        }),
+        });
+        fireAndForget(authApi.updateMe(patch), "Your profile could not be saved.");
+      },
 
-      updateOrg: (patch) =>
+      updateOrg: (patch) => {
         set((s) => {
           if (s.org) Object.assign(s.org, patch);
-        }),
+        });
+        fireAndForget(authApi.updateOrg(patch), "The organisation could not be saved.");
+      },
 
       completeOnboarding: () =>
         set((s) => {

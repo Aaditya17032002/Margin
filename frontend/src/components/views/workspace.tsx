@@ -38,6 +38,7 @@ import {
   SilentPanel,
   VersionsPanel,
 } from "@/components/workspace/panels";
+import { useAnalysisData } from "@/hooks/use-workspace-data";
 import { useAnalysesStore } from "@/stores/analyses";
 import { useRowsFor } from "@/stores/matrix";
 import { useQuestionsFor } from "@/stores/qa";
@@ -56,8 +57,10 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
   const matrixRows = useRowsFor(analysisId);
   const questions = useQuestionsFor(analysisId);
   const templates = useTemplatesStore((s) => s.templates);
-  const addExport = useReportsStore((s) => s.addExport);
+  const generateReport = useReportsStore((s) => s.generate);
   const log = useReportsStore((s) => s.log);
+
+  useAnalysisData(analysisId);
 
   // The query string is the single source of truth for the active section, so a
   // deep link, the back button, and a click on the rail all agree.
@@ -123,21 +126,21 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
     amendments: analysis.amendments.length ? { value: analysis.amendments.length, tone: "neutral" } : undefined,
   };
 
-  function exportWith(templateName: string) {
+  async function exportWith(templateName: string) {
     if (!analysis) return;
-    addExport({
-      analysisId: analysis.id,
-      analysisTitle: analysis.title,
+    const id = await generateReport(analysis.id, {
       templateName,
       format: "DOCX",
-      size: 240_000 + Math.round(matrixRows.length * 3200),
       destination: "download",
-      status: "ready",
     });
+    if (!id) {
+      notify.error("The export could not be started.");
+      return;
+    }
     log({ actor: "You", action: `exported ${templateName} for`, target: analysis.solicitationNumber, analysisId: analysis.id });
-    notify.success("Report exported.", {
-      description: `${templateName} · DOCX`,
-      action: { label: "Download", onClick: () => notify.info("Download started.") },
+    notify.success("Report queued.", {
+      description: `${templateName} · DOCX — it appears under Reports once rendered.`,
+      action: { label: "Reports", onClick: () => router.push("/app/reports") },
     });
   }
 

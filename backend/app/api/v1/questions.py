@@ -70,6 +70,21 @@ async def create_question(analysis_id: str, body: QuestionCreate, user: CurrentU
     return _to_response(q)
 
 
+# Declared before `/{question_id}`: FastAPI matches in declaration order, and a
+# parameterised path would otherwise swallow "reorder" as an id.
+@router.patch("/analyses/{analysis_id}/questions/reorder")
+async def reorder_questions(analysis_id: str, body: ReorderRequest, user: CurrentUser, db: DbSession):
+    result = await db.execute(
+        select(Question).where(Question.analysis_id == analysis_id, Question.org_id == user.org_id)
+    )
+    questions = {q.id: q for q in result.scalars().all()}
+    for index, qid in enumerate(body.ordered_ids):
+        if qid in questions:
+            questions[qid].order = index
+    await db.flush()
+    return {"reordered": len(body.ordered_ids)}
+
+
 @router.patch("/analyses/{analysis_id}/questions/{question_id}")
 async def update_question(analysis_id: str, question_id: str, body: QuestionUpdate, user: CurrentUser, db: DbSession):
     result = await db.execute(
@@ -101,16 +116,3 @@ async def delete_question(analysis_id: str, question_id: str, user: CurrentUser,
     if not q:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
     await db.delete(q)
-
-
-@router.patch("/analyses/{analysis_id}/questions/reorder")
-async def reorder_questions(analysis_id: str, body: ReorderRequest, user: CurrentUser, db: DbSession):
-    result = await db.execute(
-        select(Question).where(Question.analysis_id == analysis_id, Question.org_id == user.org_id)
-    )
-    questions = {q.id: q for q in result.scalars().all()}
-    for index, qid in enumerate(body.ordered_ids):
-        if qid in questions:
-            questions[qid].order = index
-    await db.flush()
-    return {"reordered": len(body.ordered_ids)}

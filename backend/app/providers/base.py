@@ -111,6 +111,9 @@ class ResearchProvider(ABC):
 
     @abstractmethod
     async def research(self, query: str) -> ResearchResult:
-        """Execute research on a generic, derived query. The query must NOT
-        contain raw solicitation text — only extracted generic concepts."""
+        """Execute research on a generic, derived query.
+
+        The query must NEVER contain raw solicitation text — only extracted
+        generic concepts. Document text crossing this boundary would leave the
+        tenant, which is the one thing this interface exists to prevent."""
         ...

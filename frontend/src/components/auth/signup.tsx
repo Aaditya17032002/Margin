@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowRight, Check } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 
 import { cn } from "@/lib/utils";
@@ -63,6 +63,7 @@ export function SignupView() {
   const [succeeded, setSucceeded] = React.useState(false);
   const [password, setPassword] = React.useState("");
   const [accepted, setAccepted] = React.useState(false);
+  const [serverError, setServerError] = React.useState<string | null>(null);
 
   const form = useForm<Values>({
     resolver: zodResolver(schema),
@@ -73,7 +74,17 @@ export function SignupView() {
   const strength = strengthOf(password);
 
   async function onSubmit(values: Values) {
-    await signup({ name: values.name, email: values.email, org: values.org, password: values.password });
+    const ok = await signup({
+      name: values.name,
+      email: values.email,
+      org: values.org,
+      password: values.password,
+    });
+    if (!ok) {
+      setServerError(useSessionStore.getState().error ?? "We couldn't create the workspace.");
+      return;
+    }
+    setServerError(null);
     setSucceeded(true);
     notify.success("Workspace created.", { description: "Three short questions and you're reading." });
     window.setTimeout(() => router.push("/onboarding"), reduce ? 0 : 420);
@@ -81,8 +92,13 @@ export function SignupView() {
 
   async function sso() {
     setSsoPending(true);
-    await loginWithMicrosoft();
+    const ok = await loginWithMicrosoft();
     setSsoPending(false);
+    if (!ok) {
+      setServerError(useSessionStore.getState().error ?? "Microsoft sign-in failed.");
+      return;
+    }
+    setServerError(null);
     notify.success("Signed in with Microsoft.");
     router.push("/onboarding");
   }
@@ -91,7 +107,7 @@ export function SignupView() {
     <AuthFrame
       eyebrow="Create an account"
       title="Start reading properly"
-      description="Fourteen days, no card. The demo workspace comes populated so there is something to look at immediately."
+      description="Fourteen days, no card. Your workspace starts empty — upload one solicitation and it fills with what Margin found."
       footer={
         <p>
           Already have an account?{" "}
@@ -125,6 +141,16 @@ export function SignupView() {
       </div>
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
+        {serverError ? (
+          <p
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-line border-l-[3px] border-l-seal bg-[var(--seal-tint)] px-3 py-2.5 text-sm text-ink"
+          >
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-seal" aria-hidden />
+            {serverError}
+          </p>
+        ) : null}
+
         <Field label="Your name" htmlFor="name" required error={form.formState.errors.name?.message}>
           <Input
             id="name"

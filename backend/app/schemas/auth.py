@@ -58,3 +58,18 @@ class OrgResponse(CamelModel):
 class MeResponse(CamelModel):
     user: SessionUserResponse
     org: OrgResponse
+
+
+class SessionUserUpdate(CamelModel):
+    name: str | None = None
+    title: str | None = None
+    avatar_tone: str | None = Field(None, alias="avatarTone")
+    signature: str | None = None
+    timezone: str | None = None
+
+
+class OrgUpdate(CamelModel):
+    name: str | None = None
+    domain: str | None = None
+    duns: str | None = None
+    cage: str | None = None

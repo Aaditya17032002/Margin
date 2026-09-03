@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Enum, ForeignKey, String
+from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, UUIDMixin
+from app.db.base import Base, UUIDMixin, value_enum
 
 
 class TeamMember(UUIDMixin, Base):
@@ -17,12 +17,12 @@ class TeamMember(UUIDMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     role: Mapped[str] = mapped_column(
-        Enum("admin", "reviewer", "writer", "viewer", name="team_role", create_constraint=False),
+        value_enum("admin", "reviewer", "writer", "viewer", name="team_role"),
         nullable=False,
     )
     title: Mapped[str] = mapped_column(String(255), nullable=True, default="")
     status: Mapped[str] = mapped_column(
-        Enum("active", "invited", "suspended", name="member_status", create_constraint=False),
+        value_enum("active", "invited", "suspended", name="member_status"),
         nullable=False,
         default="active",
     )

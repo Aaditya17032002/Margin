@@ -6,9 +6,10 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ArrowRight, Check } from "lucide-react";
 
 import { AGENT_BY_ID, MODE_BY_ID } from "@/data/agents";
-import { seedAnalyses } from "@/data";
+import { analysesApi, streamEvents, type RunEvent } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/surface";
+import { Callout } from "@/components/ui/feedback";
 import { notify } from "@/components/ui/toaster";
 import { AgentRoster, ReadingProgress, ReasoningTicker, type AgentPhase } from "@/components/domain/reading-room";
 import { CitationMeta, StakesBadge } from "@/components/domain/primitives";
@@ -20,190 +21,143 @@ import { useNotificationsStore, useReportsStore } from "@/stores/workspace";
 import type { AgentId, Finding } from "@/types";
 
 /**
- * Watching an expert work, not watching a spinner. Each agent takes the floor
- * in turn, its reasoning streams a line at a time, and the findings it produces
- * settle into the page as they are confirmed. When the roster finishes, the
- * seeded analysis is grafted onto the new record and the workspace opens.
+ * Watching an expert work, not watching a spinner. The roster, the reasoning
+ * ticker and the findings all come from the backend's event stream for this
+ * run — nothing here is simulated, so if an agent is slow the page is slow with
+ * it, and if a run fails the page says so.
  */
 export function RunAnalysisView({ analysisId }: { analysisId: string }) {
   const router = useRouter();
   const reduce = useReducedMotion();
   const analysis = useAnalysesStore((s) => s.analyses.find((a) => a.id === analysisId));
-  const updateAnalysis = useAnalysesStore((s) => s.updateAnalysis);
-  const addRow = useMatrixStore((s) => s.addRow);
-  const addQuestion = useQAStore((s) => s.addQuestion);
-  const pushNotification = useNotificationsStore((s) => s.push);
-  const log = useReportsStore((s) => s.log);
+  const refreshAnalysis = useAnalysesStore((s) => s.refreshOne);
+  const loadMatrix = useMatrixStore((s) => s.load);
+  const loadQuestions = useQAStore((s) => s.load);
+  const loadNotifications = useNotificationsStore((s) => s.load);
+  const loadReports = useReportsStore((s) => s.load);
 
   const [phases, setPhases] = React.useState<Record<string, AgentPhase>>({});
   const [lines, setLines] = React.useState<{ id: string; text: string; agent: string }[]>([]);
   const [surfaced, setSurfaced] = React.useState<Finding[]>([]);
-  const [progress, setProgress] = React.useState(0);
   const [ranToCompletion, setRanToCompletion] = React.useState(false);
+  const [failure, setFailure] = React.useState<string | null>(null);
   const started = React.useRef(false);
+  const settled = React.useRef(false);
 
   const agents: AgentId[] = analysis ? MODE_BY_ID[analysis.mode].agents : [];
 
   // Arriving at a finished read — a refresh, or a back button — should show the
-  // finished state immediately rather than replaying the performance.
+  // finished state immediately rather than waiting on a stream that is over.
   const alreadyRead = Boolean(analysis && analysis.identity.length > 0);
   const finished = ranToCompletion || alreadyRead;
 
-  // A blank analysis borrows the shape of a seeded one so the theatre has real
-  // material to stream; which template is used depends on the document type.
-  const template = React.useMemo(() => {
-    if (!analysis) return seedAnalyses[0];
-    return (
-      seedAnalyses.find((a) => a.docType === analysis.docType) ??
-      seedAnalyses.find((a) => a.id !== analysis.id) ??
-      seedAnalyses[0]
-    );
-  }, [analysis]);
+  const done = agents.filter((id) => phases[id] === "done").length;
+  const progress = finished ? 100 : agents.length ? (done / agents.length) * 100 : 0;
 
   React.useEffect(() => {
-    if (!analysis || started.current || agents.length === 0 || alreadyRead) return;
-    started.current = true;
+    if (!analysis || alreadyRead) return;
 
-    const timers: number[] = [];
-    const perAgent = reduce ? 320 : 1100;
-    const templateFindings = [
-      ...template.identity,
-      ...template.scope,
-      ...template.legal,
-      ...template.eligibility,
-    ];
+    // Subscription and polling are set up on every run of this effect and torn
+    // down by its cleanup — a ref guard here would survive React re-mounting
+    // the component and leave the room permanently deaf. Only the request to
+    // start the run is guarded, because that one must not happen twice.
 
-    updateAnalysis(analysis.id, { stage: "analyzing" });
-
-    agents.forEach((agentId, index) => {
-      const start = index * perAgent;
-      timers.push(
-        window.setTimeout(() => {
-          setPhases((p) => ({ ...p, [agentId]: "reading" }));
-          setProgress(((index + 0.15) / agents.length) * 100);
-        }, start),
-      );
-
-      const agentLines = AGENT_BY_ID[agentId].lines;
-      agentLines.forEach((text, lineIndex) => {
-        timers.push(
-          window.setTimeout(
-            () => {
-              setLines((current) => [
-                ...current,
-                { id: `${agentId}-${lineIndex}`, text, agent: AGENT_BY_ID[agentId].name },
-              ]);
-            },
-            start + 90 + (lineIndex * perAgent) / (agentLines.length + 0.6),
-          ),
-        );
-      });
-
-      // Findings settle in as the agent that produced them finishes.
-      const share = Math.ceil(templateFindings.length / agents.length);
-      const slice = templateFindings.slice(index * share, (index + 1) * share);
-      slice.forEach((finding, i) => {
-        timers.push(
-          window.setTimeout(
-            () => setSurfaced((current) => [...current, finding]),
-            start + perAgent * 0.55 + i * 120,
-          ),
-        );
-      });
-
-      timers.push(
-        window.setTimeout(() => {
-          setPhases((p) => ({ ...p, [agentId]: "done" }));
-          setProgress(((index + 1) / agents.length) * 100);
-        }, start + perAgent * 0.94),
-      );
-    });
-
-    timers.push(
-      window.setTimeout(
-        () => {
-          graft();
-          setRanToCompletion(true);
-          setProgress(100);
-        },
-        agents.length * perAgent + 320,
-      ),
+    // The stream is opened, and *acknowledged*, before the run is asked for.
+    // The channel has no replay: an agent that starts before the subscription
+    // lands is an agent that never appears to have run at all.
+    const stream = streamEvents(
+      `/api/v1/analyses/${analysisId}/events`,
+      (event) => handleEvent(event),
+      (error) => setFailure(error instanceof Error ? error.message : "The event stream dropped."),
+      { readyEvent: "stream_ready" },
     );
 
-    return () => timers.forEach(window.clearTimeout);
-
-    function graft() {
-      if (!analysis) return;
-      updateAnalysis(analysis.id, {
-        stage: "review",
-        summary: template.summary,
-        identity: template.identity.map((f) => ({ ...f, id: `${analysis.id}_${f.id}` })),
-        scope: template.scope.map((f) => ({ ...f, id: `${analysis.id}_${f.id}` })),
-        legal: template.legal.map((f) => ({ ...f, id: `${analysis.id}_${f.id}` })),
-        eligibility: template.eligibility.map((f) => ({ ...f, id: `${analysis.id}_${f.id}` })),
-        pricing: template.pricing.map((f) => ({ ...f, id: `${analysis.id}_${f.id}` })),
-        postAward: template.postAward.map((f) => ({ ...f, id: `${analysis.id}_${f.id}` })),
-        gates: template.gates.map((g) => ({ ...g, id: `${analysis.id}_${g.id}` })),
-        evaluation: template.evaluation,
-        risks: template.risks,
-        silent: template.silent,
-        dates: template.dates,
-        clins: template.clins,
-        pages: template.pages,
-        naics: template.naics,
-        setAside: template.setAside,
-        placeOfPerformance: template.placeOfPerformance,
-        estimatedValue: template.estimatedValue,
-        pageCount: template.pageCount,
-        agency: analysis.agency === "Pending intake" ? template.agency : analysis.agency,
-        versions: [
-          {
-            id: `${analysis.id}_v1`,
-            label: `${MODE_BY_ID[analysis.mode].name} pass`,
-            at: new Date().toISOString(),
-            author: "Margin",
-            note: `${templateFindings.length} findings extracted, every one verified against its clause.`,
-          },
-        ],
+    void stream.ready.then(() => {
+      if (started.current) return;
+      started.current = true;
+      return analysesApi.run(analysisId).catch((error: unknown) => {
+        setFailure(error instanceof Error ? error.message : "The analysis could not be started.");
       });
+    });
 
-      // Compliance and questions are produced by their own agents, so they only
-      // appear when those agents were part of the mode.
-      if (agents.includes("compliance")) {
-        const rows = useMatrixStore
-          .getState()
-          .rows.filter((r) => r.analysisId === template.id)
-          .slice(0, 16);
-        for (const row of rows) {
-          addRow({ ...row, analysisId: analysis.id, owner: null, responseLocation: "", status: "unassigned" });
-        }
+    // A dropped connection must not leave the room waiting forever, so the
+    // analysis itself is the second opinion on whether the read is over.
+    const poll = window.setInterval(async () => {
+      const current = await refreshAnalysis(analysisId);
+      if (current && current.stage !== "analyzing" && current.identity.length > 0) {
+        window.clearInterval(poll);
+        void finish();
       }
-      if (agents.includes("qa")) {
-        const questions = useQAStore
-          .getState()
-          .questions.filter((q) => q.analysisId === template.id)
-          .slice(0, 8);
-        for (const question of questions) {
-          addQuestion({
-            analysisId: analysis.id,
-            text: question.text,
-            rationale: question.rationale,
-            sourceKind: question.sourceKind,
-            goNoGoImpact: question.goNoGoImpact,
-            citation: question.citation,
-          });
-        }
-      }
+    }, 3000);
 
-      pushNotification({
-        kind: "review",
-        title: "Analysis complete",
-        body: `${analysis.title} has been read. ${template.gates.filter((g) => g.weight === "hard" && g.met === false).length} hard gates need attention.`,
-        analysisId: analysis.id,
-        href: `/app/analyses/${analysis.id}`,
+    return () => {
+      stream.stop();
+      window.clearInterval(poll);
+    };
+
+    function handleEvent(event: RunEvent) {
+      const agent = typeof event.agent === "string" ? event.agent : "orchestrator";
+
+      switch (event.event) {
+        case "agent_started":
+          setPhases((p) => ({ ...p, [agent]: "reading" }));
+          break;
+
+        case "reasoning_tick":
+          if (typeof event.text === "string") {
+            const text = event.text;
+            setLines((current) => [
+              ...current,
+              {
+                id: `${agent}-${current.length}`,
+                text,
+                agent: AGENT_BY_ID[agent as AgentId]?.name ?? agent,
+              },
+            ]);
+          }
+          break;
+
+        case "finding_emitted":
+          if (isFinding(event.finding)) {
+            const finding = event.finding;
+            setSurfaced((current) =>
+              current.some((f) => f.id === finding.id) ? current : [...current, finding],
+            );
+          }
+          break;
+
+        case "agent_completed":
+          setPhases((p) => ({ ...p, [agent]: "done" }));
+          break;
+
+        case "run_completed":
+          void finish();
+          break;
+
+        case "run_error":
+          setFailure(typeof event.error === "string" ? event.error : "The read failed.");
+          break;
+      }
+    }
+
+    async function finish() {
+      // Both the stream and the poll can get here; only the first one counts.
+      if (settled.current) return;
+      settled.current = true;
+
+      // The worker has already committed by the time it publishes this, so a
+      // reload here reads the finished analysis rather than a half-written one.
+      const fresh = await refreshAnalysis(analysisId);
+      await Promise.all([
+        loadMatrix(analysisId, { force: true }),
+        loadQuestions(analysisId, { force: true }),
+        loadNotifications({ force: true }),
+        loadReports({ force: true }),
+      ]);
+      setRanToCompletion(true);
+      notify.success("Analysis complete.", {
+        description: fresh?.summary || "Every finding is cited and ready to verify.",
       });
-      log({ actor: "Margin", action: "completed the reading of", target: analysis.title, analysisId: analysis.id });
-      notify.success("Analysis complete.", { description: "Every finding is cited and ready to verify." });
     }
     // The choreography runs exactly once per analysis.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -221,7 +175,7 @@ export function RunAnalysisView({ analysisId }: { analysisId: string }) {
 
   return (
     <div className="relative min-h-[calc(100dvh-3.5rem)] bg-paper px-5 py-8 lg:px-10">
-      <ReadingProgress value={finished ? 100 : progress} />
+      <ReadingProgress value={progress} />
 
       <div className="mx-auto max-w-[74rem] space-y-8">
         <header className="space-y-2">
@@ -234,6 +188,12 @@ export function RunAnalysisView({ analysisId }: { analysisId: string }) {
             {mode.name} · {mode.passes} · {analysis.fileName}
           </p>
         </header>
+
+        {failure ? (
+          <Callout tone="seal" title="The read stopped">
+            {failure} Nothing was written to the analysis — you can start it again from the board.
+          </Callout>
+        ) : null}
 
         <div className="grid gap-6 lg:grid-cols-[22rem_1fr]">
           <div className="space-y-6">
@@ -282,7 +242,7 @@ export function RunAnalysisView({ analysisId }: { analysisId: string }) {
                       </p>
                       <CitationMeta
                         citation={finding.citation}
-                        analysisId={template.id}
+                        analysisId={analysis.id}
                         label={finding.label}
                         origin="Reading room"
                         clamp={2}
@@ -336,5 +296,19 @@ export function RunAnalysisView({ analysisId }: { analysisId: string }) {
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+/** The stream carries whatever the agent emitted; only render what is shaped
+ *  like a finding with a citation behind it. */
+function isFinding(value: unknown): value is Finding {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<Finding>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.label === "string" &&
+    typeof candidate.value === "string" &&
+    typeof candidate.citation === "object" &&
+    candidate.citation !== null
   );
 }

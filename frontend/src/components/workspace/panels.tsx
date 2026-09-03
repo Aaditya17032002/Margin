@@ -546,16 +546,20 @@ export function SilentPanel({ analysis }: { analysis: Analysis }) {
   const questions = useQAStore((s) => s.questions);
   const updateAnalysis = useAnalysesStore((s) => s.updateAnalysis);
 
-  function convert(itemId: string) {
+  async function convert(itemId: string) {
     const item = analysis.silent.find((s) => s.id === itemId);
     if (!item) return;
-    const questionId = addQuestion({
+    const questionId = await addQuestion({
       analysisId: analysis.id,
       text: `The solicitation does not address ${item.topic.toLowerCase()}. ${item.expectation} Will the agency provide this before the question deadline?`,
       rationale: item.consequence,
       sourceKind: "silent",
       goNoGoImpact: false,
     });
+    if (!questionId) {
+      notify.error("The question could not be added.");
+      return;
+    }
     updateAnalysis(analysis.id, {
       silent: analysis.silent.map((s) =>
         s.id === itemId ? { ...s, convertedToQuestionId: questionId } : s,
@@ -625,7 +629,7 @@ export function SilentPanel({ analysis }: { analysis: Analysis }) {
                 {converted ? (
                   <Badge tone="patina">In the question set</Badge>
                 ) : (
-                  <Button variant="secondary" size="sm" onClick={() => convert(item.id)}>
+                  <Button variant="secondary" size="sm" onClick={() => void convert(item.id)}>
                     <MessageSquarePlus />
                     Ask about it
                   </Button>

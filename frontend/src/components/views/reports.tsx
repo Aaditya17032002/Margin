@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { CloudUpload, Download, FileText, Mail, RotateCcw, Trash2 } from "lucide-react";
 
+import { reportsApi } from "@/lib/api";
 import { formatBytes, pluralize } from "@/lib/utils";
 import { relative } from "@/lib/dates";
 import { Button } from "@/components/ui/button";
@@ -38,8 +39,8 @@ export function ReportsView() {
   const templates = allTemplates.filter((t) => t.kind === "report");
   const recordUse = useTemplatesStore((s) => s.recordUse);
   const exports = useReportsStore((s) => s.exports);
-  const addExport = useReportsStore((s) => s.addExport);
-  const updateExport = useReportsStore((s) => s.updateExport);
+  const generateReport = useReportsStore((s) => s.generate);
+  const loadReports = useReportsStore((s) => s.load);
   const deleteExport = useReportsStore((s) => s.deleteExport);
   const restoreExport = useReportsStore((s) => s.restoreExport);
   const log = useReportsStore((s) => s.log);
@@ -66,29 +67,24 @@ export function ReportsView() {
   const destinationBlocked =
     (destination === "onedrive" && !oneDrive?.connected) || (destination === "outlook" && !outlook?.connected);
 
-  /** The generation is fake, but the wait is honest: a report takes a moment. */
+  /** The worker renders the document, so the wait here is the real one. */
   async function generate() {
     if (!analysis || !template || progress !== null) return;
-    setProgress(0);
-    const id = addExport({
-      analysisId: analysis.id,
-      analysisTitle: analysis.title,
+    setProgress(8);
+    const id = await generateReport(analysis.id, {
       templateName: template.name,
       format,
-      size: 0,
       destination,
-      status: "generating",
     });
 
-    for (const step of [18, 42, 68, 88, 100]) {
-      await new Promise((r) => setTimeout(r, 260 + Math.random() * 220));
-      setProgress(step);
+    if (!id) {
+      setProgress(null);
+      notify.error("The report could not be started.", {
+        description: "The export queue did not accept the job.",
+      });
+      return;
     }
 
-    updateExport(id, {
-      status: "ready",
-      size: 180_000 + template.sections.length * 24_000 + analysis.pageCount * 900,
-    });
     recordUse(template.id);
     log({
       actor: "You",
@@ -96,14 +92,32 @@ export function ReportsView() {
       target: analysis.solicitationNumber,
       analysisId: analysis.id,
     });
+
+    // The record arrives as `generating`; poll until the worker marks it ready.
+    for (const step of [30, 55, 75, 90, 100]) {
+      await new Promise((r) => setTimeout(r, 900));
+      setProgress(step);
+      await loadReports({ force: true });
+      const current = useReportsStore.getState().exports.find((x) => x.id === id);
+      if (current && current.status !== "generating") break;
+    }
     setProgress(null);
 
-    notify.success("Report ready.", {
+    const finished = useReportsStore.getState().exports.find((x) => x.id === id);
+    if (finished?.status === "failed") {
+      notify.error("The report failed to render.", { description: `${template.name} · ${format}` });
+      return;
+    }
+
+    notify.success(finished?.status === "ready" ? "Report ready." : "Report queued.", {
       description: `${template.name} · ${format} · ${DESTINATION_COPY[destination]}`,
-      action: {
-        label: destination === "outlook" ? "Open in Outlook" : "Download",
-        onClick: () => notify.info(destination === "outlook" ? "Opening Outlook…" : "Download started."),
-      },
+      action:
+        finished?.status === "ready"
+          ? {
+              label: "Download",
+              onClick: () => window.open(reportsApi.downloadUrl(id), "_blank", "noopener"),
+            }
+          : undefined,
     });
   }
 
@@ -307,8 +321,13 @@ export function ReportsView() {
                               size="iconSm"
                               aria-label="Retry export"
                               onClick={() => {
-                                updateExport(record.id, { status: "ready" });
-                                notify.success("Report regenerated.");
+                                void generateReport(record.analysisId, {
+                                  templateName: record.templateName,
+                                  format: record.format,
+                                  destination: record.destination,
+                                }).then((id) => {
+                                  if (id) notify.success("Report queued again.");
+                                });
                               }}
                             >
                               <RotateCcw />
@@ -318,7 +337,8 @@ export function ReportsView() {
                               variant="quiet"
                               size="iconSm"
                               aria-label={`Download ${record.analysisTitle}`}
-                              onClick={() => notify.info("Download started.")}
+                              disabled={record.status !== "ready"}
+                              onClick={() => window.open(reportsApi.downloadUrl(record.id), "_blank", "noopener")}
                             >
                               <Download />
                             </Button>

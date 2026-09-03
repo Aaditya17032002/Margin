@@ -15,34 +15,19 @@ export {
   usePrefsStore,
 } from "./workspace";
 export { useUIStore } from "./ui";
+export { loadWorkspace, clearWorkspace } from "./workspace-lifecycle";
 
-import { useAnalysesStore } from "./analyses";
-import { useMatrixStore } from "./matrix";
-import { useQAStore } from "./qa";
 import { useSessionStore } from "./session";
-import {
-  useIntegrationsStore,
-  useKnowledgeStore,
-  useNotificationsStore,
-  usePrefsStore,
-  useReportsStore,
-  useTeamStore,
-  useTemplatesStore,
-} from "./workspace";
+import { usePrefsStore } from "./workspace";
+import { clearWorkspace } from "./workspace-lifecycle";
 
-const PERSISTED = [
-  useSessionStore,
-  useAnalysesStore,
-  useMatrixStore,
-  useQAStore,
-  useNotificationsStore,
-  useTeamStore,
-  useIntegrationsStore,
-  useTemplatesStore,
-  useKnowledgeStore,
-  useReportsStore,
-  usePrefsStore,
-];
+/**
+ * Only two stores keep anything in localStorage: the session, so a reload does
+ * not bounce a signed-in person to the login screen, and preferences, because
+ * appearance has to be right on the first paint. Everything else is fetched
+ * from the backend once there is a session to fetch it with.
+ */
+const PERSISTED = [useSessionStore, usePrefsStore];
 
 /**
  * Guards and shells need to know when localStorage has finished replaying, or
@@ -67,19 +52,8 @@ export async function rehydrateAll() {
         status: "idle",
         error: null,
       });
+      clearWorkspace();
     }
   }
   useHydrationStore.getState().markHydrated();
-}
-
-export function resetAllData() {
-  useAnalysesStore.getState().resetToSeed();
-  useMatrixStore.getState().resetToSeed();
-  useQAStore.getState().resetToSeed();
-  useNotificationsStore.getState().resetToSeed();
-  useTeamStore.getState().resetToSeed();
-  useIntegrationsStore.getState().resetToSeed();
-  useTemplatesStore.getState().resetToSeed();
-  useKnowledgeStore.getState().resetToSeed();
-  useReportsStore.getState().resetToSeed();
 }

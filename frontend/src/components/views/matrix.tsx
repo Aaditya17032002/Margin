@@ -5,6 +5,7 @@ import * as React from "react";
 import { PageHeader } from "@/components/ui/surface";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/controls";
 import { ComplianceMatrix } from "@/components/workspace/compliance-matrix";
+import { useAllMatrixData } from "@/hooks/use-workspace-data";
 import { useAnalysesStore } from "@/stores/analyses";
 
 /**
@@ -14,6 +15,8 @@ import { useAnalysesStore } from "@/stores/analyses";
 export function MatrixView() {
   const analyses = useAnalysesStore((s) => s.analyses);
   const [scope, setScope] = React.useState<string>("all");
+
+  useAllMatrixData();
 
   const titles = React.useMemo(
     () => Object.fromEntries(analyses.map((a) => [a.id, a.solicitationNumber])),

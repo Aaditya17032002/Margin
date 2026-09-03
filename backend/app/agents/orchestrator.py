@@ -148,10 +148,9 @@ async def run_orchestration(
 
         await redis.publish(channel, AgentEvent(EventType.AGENT_COMPLETED, "qa").to_json())
 
-    # ── Run completed ────────────────────────────────────────────────────
-    await redis.publish(channel, AgentEvent(EventType.RUN_COMPLETED, "orchestrator", {
-        "findingCount": sum(len(v) for v in all_findings.values()),
-    }).to_json())
+    # `run_completed` is deliberately not published here. The caller persists
+    # what this returned, and a listener that reloaded on the orchestrator's own
+    # signal would race that write and read the analysis back unchanged.
 
     return {
         "findings": all_findings,

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
 import { ArrowRight, Check, FolderOpen, Mail } from "lucide-react";
 
+import { analysesApi, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { listItem, staggerList } from "@/lib/motion";
 import { MODES } from "@/data/agents";
@@ -55,7 +56,7 @@ export function NewAnalysisView() {
   async function start() {
     if (!ready) return;
     setSubmitting(true);
-    const id = createAnalysis({
+    const id = await createAnalysis({
       title: title.trim(),
       agency: agency.trim() || "Pending intake",
       solicitationNumber: number.trim() || undefined,
@@ -64,8 +65,29 @@ export function NewAnalysisView() {
       fileName: files[0].name,
       fileSize: files[0].size,
       source: "upload",
-      owner: user?.name ?? "Amara Osei",
+      owner: user?.name ?? "",
     });
+
+    if (!id) {
+      setSubmitting(false);
+      notify.error("The analysis could not be created.", {
+        description: "Nothing was uploaded. Try again in a moment.",
+      });
+      return;
+    }
+
+    // The document has to be on the server before the reading room asks for a
+    // run, or the agents open an empty file.
+    try {
+      await analysesApi.uploadDocument(id, files[0].file);
+    } catch (error) {
+      setSubmitting(false);
+      notify.error("The document could not be uploaded.", {
+        description: error instanceof ApiError ? error.detail : "The analysis was created without it.",
+      });
+      return;
+    }
+
     notify.success("Reading has started.", { description: `${selectedMode.name} pass over ${files[0].name}.` });
     router.push(`/app/analyses/${id}/run`);
   }

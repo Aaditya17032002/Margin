@@ -129,13 +129,13 @@ export function Topbar() {
               className="ml-1 rounded-full transition-opacity duration-150 hover:opacity-85"
               aria-label="Account menu"
             >
-              <Avatar name={user?.name ?? "Amara Osei"} tone="patina" size="sm" presence="online" />
+              <Avatar name={user?.name ?? ""} tone="patina" size="sm" presence="online" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-60">
             <div className="px-2.5 py-2">
-              <p className="truncate text-sm font-medium text-ink">{user?.name ?? "Amara Osei"}</p>
-              <p className="truncate text-xs text-ink-faint">{user?.email ?? "a.osei@thornfield.co"}</p>
+              <p className="truncate text-sm font-medium text-ink">{user?.name}</p>
+              <p className="truncate text-xs text-ink-faint">{user?.email}</p>
             </div>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>

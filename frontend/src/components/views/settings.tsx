@@ -29,7 +29,7 @@ import { ConfirmDialog } from "@/components/ui/overlay";
 import { notify } from "@/components/ui/toaster";
 import { useSessionStore } from "@/stores/session";
 import { useIntegrationsStore, usePrefsStore, useTeamStore } from "@/stores/workspace";
-import { resetAllData } from "@/stores";
+import { loadWorkspace } from "@/stores";
 import type { Appearance, Prefs } from "@/types";
 
 const TABS = [
@@ -758,12 +758,12 @@ function DangerSection() {
         />
         <div className="divide-y divide-line px-5">
           <SettingRow
-            label="Reset demo data"
-            description="Return every analysis, matrix, and note to the seeded state."
+            label="Reload from the server"
+            description="Discard what this browser is holding and fetch every collection again."
             control={
               <Button variant="secondary" size="sm" onClick={() => setConfirmReset(true)}>
                 <RotateCcw />
-                Reset data
+                Reload
               </Button>
             }
           />
@@ -799,13 +799,13 @@ function DangerSection() {
       <ConfirmDialog
         open={confirmReset}
         onOpenChange={setConfirmReset}
-        title="Reset all data?"
-        confirmLabel="Reset"
-        description="Your edits are discarded and the seeded portfolio returns. Preferences are kept."
+        title="Reload everything?"
+        confirmLabel="Reload"
+        description="Nothing on the server changes. This browser drops what it has cached and fetches it again."
         onConfirm={() => {
-          resetAllData();
+          void loadWorkspace({ force: true });
           setConfirmReset(false);
-          notify.success("Demo data restored.");
+          notify.success("Reloaded from the server.");
         }}
       />
 

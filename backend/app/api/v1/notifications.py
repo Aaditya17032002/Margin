@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from typing import AsyncGenerator
 
+import orjson
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sse_starlette.sse import EventSourceResponse
 
 from app.core.deps import CurrentUser, DbSession, RedisClient
 from app.db.models.notification import Notification
-from app.schemas.resources import NotificationResponse, NotificationUpdate
+from app.schemas.resources import (
+    NotificationCreate,
+    NotificationResponse,
+    NotificationUpdate,
+)
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -39,6 +45,51 @@ async def list_notifications(user: CurrentUser, db: DbSession):
         .limit(100)
     )
     return [_to_response(n) for n in result.scalars().all()]
+
+
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=NotificationResponse)
+async def create_notification(body: NotificationCreate, user: CurrentUser, db: DbSession, redis: RedisClient):
+    """Raise a notification for the signed-in user."""
+    n = Notification(
+        id=f"n_{uuid.uuid4().hex[:8]}",
+        user_id=user.id,
+        org_id=user.org_id,
+        kind=body.kind,
+        title=body.title,
+        body=body.body,
+        read=False,
+        analysis_id=body.analysis_id,
+        href=body.href,
+    )
+    db.add(n)
+    await db.flush()
+
+    payload = _to_response(n)
+    await redis.publish(f"notifications:{user.id}", orjson.dumps(payload).decode())
+    return payload
+
+
+@router.delete("", status_code=status.HTTP_204_NO_CONTENT)
+async def clear_all(user: CurrentUser, db: DbSession):
+    await db.execute(
+        delete(Notification).where(
+            Notification.user_id == user.id, Notification.org_id == user.org_id
+        )
+    )
+    await db.flush()
+
+
+@router.delete("/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_notification(notification_id: str, user: CurrentUser, db: DbSession):
+    result = await db.execute(
+        select(Notification).where(
+            Notification.id == notification_id, Notification.user_id == user.id
+        )
+    )
+    n = result.scalar_one_or_none()
+    if not n:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+    await db.delete(n)
 
 
 @router.patch("/{notification_id}")

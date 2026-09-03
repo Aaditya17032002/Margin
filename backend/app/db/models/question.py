@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, UUIDMixin
+from app.db.base import Base, UUIDMixin, value_enum
 
 
 class Question(UUIDMixin, Base):
@@ -18,7 +18,7 @@ class Question(UUIDMixin, Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
     source_kind: Mapped[str] = mapped_column(
-        Enum("silent", "contradiction", "ambiguity", "manual", name="question_source"),
+        value_enum("silent", "contradiction", "ambiguity", "manual", name="question_source"),
         nullable=False,
         default="manual",
     )
