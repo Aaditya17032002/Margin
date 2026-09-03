@@ -2,15 +2,16 @@
 #
 # The only service bound to host ports.
 # Routes /api/* to the backend, everything else to the frontend.
+# Auth rate limiting lives in the FastAPI app (slowapi); stock
+# caddy:2-alpine does not ship the rate_limit plugin.
 
 {
-	# In dev, Caddy's auto HTTPS is overridden by the CADDY_GLOBAL_OPTIONS env var
+	auto_https off
 }
 
-:80, :443 {
+:80 {
 	# ── Security Headers ─────────────────────────────────────────────
 	header {
-		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
@@ -47,16 +48,6 @@
 	# ── Everything else → Frontend ───────────────────────────────────
 	handle {
 		reverse_proxy frontend:3000
-	}
-
-	# ── Rate limiting ────────────────────────────────────────────────
-	@auth_paths path /api/v1/auth/*
-	rate_limit @auth_paths {
-		zone auth_zone {
-			key {remote_host}
-			events 10
-			window 1m
-		}
 	}
 
 	# ── Logging ──────────────────────────────────────────────────────

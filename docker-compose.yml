@@ -40,10 +40,13 @@ services:
       dockerfile: Dockerfile
       target: frontend
     restart: unless-stopped
+    environment:
+      - HOSTNAME=0.0.0.0
+      - PORT=3000
     expose:
       - "3000"
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/api/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -88,6 +91,8 @@ services:
     networks:
       - web
       - internal
+    # Volume mounts for uploads/reports must be writable by the API user.
+    user: "0:0"
     read_only: true
     tmpfs:
       - /tmp
@@ -124,6 +129,8 @@ services:
         condition: service_healthy
     networks:
       - internal
+      - web
+    user: "0:0"
     read_only: true
     tmpfs:
       - /tmp
@@ -159,15 +166,8 @@ services:
       retries: 5
     networks:
       - internal
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - FOWNER
-      - SETGID
-      - SETUID
-    security_opt:
-      - no-new-privileges:true
+    # Official Postgres image needs normal Linux caps to init the data dir
+    # (cap_drop: ALL breaks find/chown on Docker Desktop).
     deploy:
       resources:
         limits:
@@ -186,10 +186,8 @@ services:
       retries: 5
     networks:
       - internal
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
+    # Official Redis entrypoint calls setpriv; cap_drop: ALL + no-new-privileges
+    # makes that fail with "setresuid failed: Operation not permitted".
     deploy:
       resources:
         limits:

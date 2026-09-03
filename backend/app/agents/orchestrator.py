@@ -12,8 +12,11 @@ from typing import Any
 from redis.asyncio import Redis
 
 from app.agents.events import AgentEvent, EventType
+from app.core.logging import get_logger
 from app.providers.base import AgentProvider, ChunkResult
 from app.providers.factory import get_agent_provider, get_research_provider
+
+logger = get_logger()
 
 # Mode → agent roster mapping (from §8.8)
 MODE_AGENTS: dict[str, list[str]] = {
@@ -36,6 +39,33 @@ AGENT_SECTIONS: dict[str, str] = {
     "risk": "risks",
     "qa": "questions",
 }
+
+
+def _generic_research_query(findings: dict[str, list[dict]]) -> str:
+    """Build a Bing-safe query from extracted identity — never raw document text."""
+    identity = findings.get("identity") or []
+    bits: dict[str, str] = {}
+    for item in identity:
+        label = str(item.get("label") or "").lower()
+        value = str(item.get("value") or "").strip()
+        if not value or value.upper() == "SILENT":
+            continue
+        if "agency" in label or "issuing" in label:
+            bits["agency"] = value[:120]
+        elif "naics" in label:
+            bits["naics"] = value.split("—")[0].split("-")[0].strip()[:20]
+        elif "document type" in label:
+            bits["type"] = value[:80]
+    agency = bits.get("agency", "U.S. government")
+    dtype = bits.get("type", "government solicitation")
+    query = (
+        f"Current public procurement rules, evaluation practices, and compliance "
+        f"requirements relevant to a {dtype} issued by {agency}"
+    )
+    if bits.get("naics"):
+        query += f" (NAICS {bits['naics']})"
+    query += ". Concise report with sources. Do not include unpublished solicitation text."
+    return query
 
 
 async def run_orchestration(
@@ -97,21 +127,26 @@ async def run_orchestration(
     if mode == "deep-research":
         try:
             research_provider = get_research_provider()
-            # Generate a generic query (never raw document text!)
-            generic_query = "federal procurement compliance requirements 2026"
+            generic_query = _generic_research_query(all_findings)
+            logger.info("deep_research_query", query=generic_query)
             research_result = await research_provider.research(generic_query)
-            # Merge research findings into legal section
             for f in research_result.findings:
                 all_findings["legal"].append({
-                    "id": f.get("id", ""),
-                    "label": f.get("title", ""),
+                    "id": f.get("id") or f"dr_{len(all_findings['legal'])}",
+                    "label": f.get("title", "External research"),
                     "value": f.get("summary", ""),
                     "confidence": 0.7,
                     "stakes": "informational",
-                    "citation": {"id": "", "page": 0, "section": "External", "quote": "", "bbox": {}},
+                    "citation": {
+                        "id": "",
+                        "page": 0,
+                        "section": "External",
+                        "quote": (research_result.sources[0]["url"] if research_result.sources else ""),
+                        "bbox": {},
+                    },
                 })
         except Exception:
-            pass  # Research is best-effort
+            logger.exception("deep_research_failed")
 
     # ── Verifier pass ────────────────────────────────────────────────────
     if "verifier" in roster:

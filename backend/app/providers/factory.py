@@ -20,6 +20,9 @@ def get_docintel_provider() -> DocIntelProvider:
     if settings.PROVIDER_MODE == "azure" and settings.AZURE_DOCINTEL_ENDPOINT:
         from app.providers.azure import AzureDocIntelProvider
         return AzureDocIntelProvider(settings.AZURE_DOCINTEL_ENDPOINT, settings.AZURE_DOCINTEL_KEY)
+    if settings.PROVIDER_MODE == "azure":
+        from app.providers.azure import LocalLayoutProvider
+        return LocalLayoutProvider()
     from app.providers.mock import MockDocIntelProvider
     return MockDocIntelProvider()
 
@@ -38,6 +41,8 @@ def get_llm_provider() -> LLMProvider:
             extract_deployment=settings.AZURE_OPENAI_DEPLOYMENT_EXTRACT,
             verifier_deployment=settings.AZURE_OPENAI_DEPLOYMENT_VERIFIER,
             embedding_api_key=settings.AZURE_EMBEDDING_API_KEY or None,
+            embedding_dim=settings.EMBEDDING_DIM,
+            embedding_api_version=settings.AZURE_EMBEDDING_API_VERSION,
         )
     from app.providers.mock import MockLLMProvider
     return MockLLMProvider()
@@ -54,6 +59,7 @@ def get_agent_provider() -> AgentProvider:
             extract_deployment=settings.AZURE_OPENAI_DEPLOYMENT_EXTRACT,
             verifier_deployment=settings.AZURE_OPENAI_DEPLOYMENT_VERIFIER,
             router_deployment=settings.AZURE_OPENAI_DEPLOYMENT,
+            llm=get_llm_provider(),
         )
     from app.providers.mock import MockAgentProvider
     return MockAgentProvider()
@@ -72,7 +78,7 @@ def get_search_provider() -> SearchProvider:
 @lru_cache(maxsize=1)
 def get_research_provider() -> ResearchProvider:
     settings = get_settings()
-    if settings.PROVIDER_MODE == "azure" and (
+    if settings.PROVIDER_MODE == "azure" and settings.AZURE_DEEP_RESEARCH_ENDPOINT and (
         settings.AZURE_DEEP_RESEARCH_API_KEY or settings.AZURE_OPENAI_API_KEY
     ):
         from app.providers.azure import AzureResearchProvider

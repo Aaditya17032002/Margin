@@ -160,6 +160,7 @@ class Settings(BaseSettings):
     # Embeddings (pgvector) — may use a separate key on the same resource
     AZURE_EMBEDDING_DEPLOYMENT: str = "text-embedding-3-large"
     AZURE_EMBEDDING_API_KEY: str = ""
+    AZURE_EMBEDDING_API_VERSION: str = "2024-12-01-preview"
 
     # ── Azure Deep Research (Norway East — o3-deep-research + Bing) ──────
     AZURE_DEEP_RESEARCH_ENDPOINT: str = ""

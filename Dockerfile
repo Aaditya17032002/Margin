@@ -21,10 +21,12 @@ CMD ["node", "server.js"]
 FROM python:3.12-slim AS py-base
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    UV_SYSTEM_PYTHON=1
+    UV_SYSTEM_PYTHON=1 \
+    PYTHONPATH=/srv \
+    PATH="/srv/.venv/bin:$PATH"
 RUN pip install uv
 WORKDIR /srv
-COPY backend/pyproject.toml ./
+COPY backend/pyproject.toml backend/README.md ./
 # Generate lockfile if missing, then install
 RUN uv lock 2>/dev/null || true && uv sync --frozen --no-dev 2>/dev/null || uv sync --no-dev
 COPY backend/ .
@@ -34,8 +36,9 @@ USER app
 # ---- backend API ----
 FROM py-base AS backend
 EXPOSE 8000
-CMD ["uv", "run", "gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000", "-w", "4"]
+# Call venv binaries directly — `uv run` needs a writable cache and breaks under read_only.
+CMD ["gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000", "-w", "4"]
 
 # ---- background worker ----
 FROM py-base AS worker
-CMD ["uv", "run", "arq", "app.workers.settings.WorkerSettings"]
+CMD ["arq", "app.workers.settings.WorkerSettings"]

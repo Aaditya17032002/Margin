@@ -27,6 +27,6 @@ class WorkerSettings:
     ]
     redis_settings = get_redis_settings()
     max_jobs = 10
-    job_timeout = 600  # 10 minutes
+    job_timeout = 1800  # 30 minutes — o3-deep-research is a background job
     keep_result = 3600
     poll_delay = 0.5
