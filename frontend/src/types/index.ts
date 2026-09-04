@@ -449,7 +449,36 @@ export interface ResponseCheck {
   confirmedAt?: string | null;
   note?: string | null;
   history?: { at: string; event: string; detail: string }[];
+  /** The chain, frozen when the check was written. */
+  lineage?: {
+    state?: "unchanged" | "changed" | "lost" | "new";
+    detail?: string;
+    previousCheckId?: string | null;
+    trace?: Record<string, unknown>;
+  };
+  supersedesId?: string | null;
+  /**
+   * A verdict carried from the previous draft because the passage did not
+   * change. Shown, because a signature on a page nobody re-read is worth being
+   * able to see.
+   */
+  carriedVerdict?: boolean;
 }
+
+/**
+ * How somebody satisfied themselves.
+ *
+ * "Satisfied" with no basis is a name against an outcome; "counted 38 pages in
+ * the rendered PDF" is evidence, and only the second is worth anything in a
+ * debrief.
+ */
+export type VerificationBasis =
+  | "read_the_document"
+  | "counted_in_the_file"
+  | "checked_with_the_agency"
+  | "team_knowledge"
+  | "prior_bid"
+  | "not_stated";
 
 /** The draft response bound to a solicitation, and the last check of it. */
 export interface ResponseBinding {

@@ -24,6 +24,7 @@ from app.pipeline import verdicts
 from app.db.models.analysis import Analysis
 from app.db.models.requirement import Requirement
 from app.db.models.response_check import ResponseCheck
+from app.db.models.verdict import Verdict as VerdictRow
 from app.schemas.resources import ResponseCheckResponse, ResponseCheckUpdate
 
 router = APIRouter(tags=["response"])
@@ -56,6 +57,14 @@ def _to_response(row: ResponseCheck, requirement: Requirement | None) -> dict:
         "confirmedAt": row.confirmed_at.isoformat() if row.confirmed_at else None,
         "note": row.note,
         "history": row.history or [],
+        # The chain, frozen when the check was written: clause → response
+        # section → claim → evidence → who verified it.
+        "lineage": row.lineage or {},
+        "supersedesId": row.supersedes_id,
+        #: A verdict carried from the previous draft because the passage did
+        #: not change. Shown, because a signature on a page nobody re-read is
+        #: worth being able to see.
+        "carriedVerdict": bool(row.carried_verdict),
     }
 
 
@@ -245,12 +254,25 @@ async def decide_check(
     # The decision is also a labelled example, produced by somebody who knows
     # the answer. It used to become a sentence in a history array and stop
     # being usable for anything.
+    previous_verdict = (
+        await db.execute(
+            select(VerdictRow)
+            .where(VerdictRow.subject_id == row.id, VerdictRow.subject_kind == "response_check")
+            .order_by(VerdictRow.at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
     await verdicts.record(
         db,
         org_id=user.org_id,
         analysis_id=analysis_id,
         subject_kind="response_check",
         subject_id=row.id,
+        basis=body.basis or "not_stated",
+        basis_detail=body.basis_detail or "",
+        previous_verdict_id=previous_verdict.id if previous_verdict else None,
+        response_version=row.response_version,
         machine_status=previous,
         machine_decided_by=machine_decided_by,
         machine_rule=row.rule,

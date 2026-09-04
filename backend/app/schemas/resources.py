@@ -188,6 +188,12 @@ class ResponseCheckResponse(CamelModel):
     confirmed_at: str | None = Field(None, alias="confirmedAt")
     note: str | None = None
     history: list[dict] = []
+    #: The chain, frozen when the check was written.
+    lineage: dict = {}
+    supersedes_id: str | None = Field(None, alias="supersedesId")
+    #: A verdict carried from the previous draft because the passage did not
+    #: change. A signature on a page nobody re-read is worth being able to see.
+    carried_verdict: bool = Field(False, alias="carriedVerdict")
 
 
 class ResponseCheckUpdate(CamelModel):
@@ -197,6 +203,18 @@ class ResponseCheckUpdate(CamelModel):
     #: Signing off a mandatory requirement. The engine cannot do this itself.
     confirmed: bool | None = None
     note: str | None = None
+    #: How you satisfied yourself. "Satisfied" with no basis is a name against
+    #: an outcome; "counted 38 pages in the rendered PDF" is evidence, and only
+    #: the second is worth anything in a debrief.
+    basis: Literal[
+        "read_the_document",
+        "counted_in_the_file",
+        "checked_with_the_agency",
+        "team_knowledge",
+        "prior_bid",
+        "not_stated",
+    ] = "not_stated"
+    basis_detail: str = Field("", alias="basisDetail")
 
 
 class BulkMatrixRequest(CamelModel):

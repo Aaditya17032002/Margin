@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip } from "@/components/ui/overlay";
 import { notify } from "@/components/ui/toaster";
 import { CitationMeta } from "@/components/domain/primitives";
-import type { Analysis, CheckStatus, ResponseCheck } from "@/types";
+import type { Analysis, CheckStatus, ResponseCheck, VerificationBasis } from "@/types";
 
 /**
  * The response gap view.
@@ -39,6 +39,22 @@ const STATUS: Record<CheckStatus, { label: string; tone: "leaf" | "ochre" | "sea
   not_found: { label: "Not addressed", tone: "seal", Icon: AlertTriangle },
   unverifiable: { label: "Could not tell", tone: "slate", Icon: CircleHelp },
 };
+
+/**
+ * How somebody satisfied themselves, recorded alongside the verdict.
+ *
+ * A name against an outcome is an audit trail. A name against an outcome *and
+ * what it was based on* is evidence — and it is also the only kind of record
+ * that makes a usable evaluation label later.
+ */
+const BASES: { value: VerificationBasis; label: string }[] = [
+  { value: "counted_in_the_file", label: "I counted it in the file" },
+  { value: "read_the_document", label: "I read the document" },
+  { value: "checked_with_the_agency", label: "I checked with the agency" },
+  { value: "team_knowledge", label: "I know this from the team" },
+  { value: "prior_bid", label: "From a previous bid" },
+  { value: "not_stated", label: "Not stated" },
+];
 
 const FILTERS: { value: string; label: string }[] = [
   { value: "attention", label: "Needs attention" },
@@ -327,11 +343,21 @@ function TraceRow({
 }) {
   const status = STATUS[check.status] ?? STATUS.unverifiable;
   const [saving, setSaving] = React.useState(false);
+  // Defaulted to how the row was decided: a counted rule is confirmed by
+  // opening the file, a model's reading by reading the document.
+  const [basis, setBasis] = React.useState<VerificationBasis>(
+    check.verification === "mechanical" ? "counted_in_the_file" : "read_the_document",
+  );
+  const [basisDetail, setBasisDetail] = React.useState("");
 
   async function decide(patch: { status?: CheckStatus; confirmed?: boolean }) {
     setSaving(true);
     try {
-      await responseApi.decide(analysis.id, check.id, patch);
+      await responseApi.decide(analysis.id, check.id, {
+        ...patch,
+        basis,
+        basisDetail: basisDetail.trim() || undefined,
+      });
       notify.success(patch.confirmed ? "Signed off." : "Recorded.", { description: check.reference });
       onChange();
     } catch {
@@ -406,6 +432,42 @@ function TraceRow({
                 downgraded.
               </p>
             ) : null}
+          </div>
+        ) : null}
+
+        {check.carriedVerdict ? (
+          <p className="text-2xs leading-relaxed text-ink-faint">
+            Signed off against an earlier draft. The passage answering this did not change, so
+            the verdict stands — but nobody has read it against the current one.
+          </p>
+        ) : null}
+        {check.lineage?.state === "lost" ? (
+          <p className="rounded-sm border-l-2 border-seal/45 bg-[var(--seal-tint)] px-3 py-1.5 text-xs leading-relaxed text-ink">
+            {check.lineage.detail}
+          </p>
+        ) : null}
+
+        {check.needsConfirmation || check.status !== "satisfied" ? (
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Select value={basis} onValueChange={(value) => setBasis(value as VerificationBasis)}>
+              <SelectTrigger className="w-52">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {BASES.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <input
+              value={basisDetail}
+              onChange={(event) => setBasisDetail(event.target.value)}
+              placeholder="What you checked — optional but worth a sentence"
+              aria-label="What you checked"
+              className="h-8 min-w-52 flex-1 rounded-sm border border-line bg-paper px-2 text-xs text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-patina/40"
+            />
           </div>
         ) : null}
 

@@ -23,6 +23,7 @@ from app.db.models.analysis import Analysis
 from app.db.models.document import Document
 from app.db.models.requirement import Requirement
 from app.db.models.response_check import ResponseCheck
+from app.pipeline import lineage
 from app.pipeline.corpus import build_corpus
 from app.pipeline.traceability import Trace, summarise, trace_response
 
@@ -80,9 +81,20 @@ async def check_response_task(ctx: dict, analysis_id: str) -> dict:
                 file_names=[d.file_name for d in current],
                 llm=_llm(),
             )
-            await _persist(db, analysis, traces, version=version, document_id=current[0].id)
+            written = await _persist(
+                db, analysis, traces, version=version, document_id=current[0].id
+            )
+
+            # A new draft is not a fresh start. Verdicts on passages that did
+            # not change carry forward — marked as carried — and verdicts on
+            # passages that did are dropped rather than quietly inherited.
+            lineage_summary = await _carry_forward(
+                db, analysis, requirements, written, version=version
+            )
 
             summary = summarise(traces)
+            if lineage_summary:
+                summary["lineage"] = lineage_summary
             analysis.response = {
                 **binding,
                 "version": version,
@@ -125,6 +137,56 @@ def _llm():
         return None
 
 
+async def _carry_forward(
+    db: AsyncSession,
+    analysis: Analysis,
+    requirements: list[Requirement],
+    current: list[ResponseCheck],
+    *,
+    version: int,
+) -> dict | None:
+    """Compare this draft's checks against the previous draft's.
+
+    Checking a revision from scratch throws away every signature and asks the
+    team to re-verify a hundred requirements because two sections changed.
+    Carrying the verdicts forward asserts that somebody checked text they never
+    saw. Neither is right, so each requirement's evidence is compared and the
+    two cases are separated.
+    """
+    if version <= 1:
+        return None
+
+    previous = list(
+        (
+            await db.execute(
+                select(ResponseCheck).where(
+                    ResponseCheck.analysis_id == analysis.id,
+                    ResponseCheck.response_version == version - 1,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not previous:
+        return None
+
+    links = lineage.compare(previous, current)
+    summary = lineage.apply(links, previous, current)
+
+    # The full chain is frozen into each check, so it still describes what was
+    # checked after the requirement is amended and the response revised again.
+    by_id = {requirement.id: requirement for requirement in requirements}
+    for check in current:
+        check.lineage = {
+            **(check.lineage or {}),
+            "trace": lineage.trace(check, by_id.get(check.requirement_id)),
+        }
+
+    await db.flush()
+    return summary
+
+
 async def _persist(
     db: AsyncSession,
     analysis: Analysis,
@@ -132,7 +194,7 @@ async def _persist(
     *,
     version: int,
     document_id: str,
-) -> None:
+) -> list[ResponseCheck]:
     """Write this version's verdicts, keeping what a person has already said.
 
     A check a human confirmed or overruled is never overwritten by a re-run
@@ -154,10 +216,15 @@ async def _persist(
         .all()
     }
     now = datetime.now(UTC)
+    # Collected explicitly rather than read back from the session: after a
+    # flush there is no "new" set to inspect, and the caller needs every row
+    # this draft has — including the ones a person had already decided.
+    written: list[ResponseCheck] = []
 
     for trace in traces:
         row = existing.get(trace.requirement_id)
         if row is not None and row.decided_by == "human":
+            written.append(row)
             continue
         if row is None:
             row = ResponseCheck(
@@ -170,6 +237,8 @@ async def _persist(
                 history=[],
             )
             db.add(row)
+            existing[trace.requirement_id] = row
+        written.append(row)
 
         previous = row.status
         row.status = trace.status
@@ -193,3 +262,4 @@ async def _persist(
             ]
 
     await db.flush()
+    return written

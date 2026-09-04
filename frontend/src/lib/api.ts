@@ -27,6 +27,7 @@ import type {
   Prefs,
   QAQuestion,
   ResponseCheck,
+  VerificationBasis,
   ReviewColour,
   ReviewFinding,
   ReviewRound,
@@ -353,7 +354,14 @@ export const responseApi = {
   decide: (
     analysisId: string,
     checkId: string,
-    patch: { status?: ResponseCheck["status"]; confirmed?: boolean; note?: string },
+    patch: {
+      status?: ResponseCheck["status"];
+      confirmed?: boolean;
+      note?: string;
+      /** How you satisfied yourself. Recorded as evidence, not decoration. */
+      basis?: VerificationBasis;
+      basisDetail?: string;
+    },
   ) =>
     api<ResponseCheck>(`/api/v1/analyses/${analysisId}/response/checks/${checkId}`, {
       method: "PATCH",

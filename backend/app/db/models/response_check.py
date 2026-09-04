@@ -83,3 +83,19 @@ class ResponseCheck(UUIDMixin, Base):
     #: What a person said when they overruled or accepted the check.
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+    # ── Lineage across response revisions ────────────────────────────────
+    #: The check on the previous draft that this one replaces. Without it, a
+    #: new draft's verdicts are just newer rows: nothing can say what changed,
+    #: what was re-verified, or what quietly stopped being true.
+    supersedes_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: True when a human verdict from the previous draft was carried forward
+    #: because the passage it rested on did not change. Carried forward, and
+    #: labelled as carried — a signature on text nobody re-read is worth
+    #: knowing about.
+    carried_verdict: Mapped[bool] = mapped_column(nullable=False, default=False)
+    #: The trace, frozen: {requirementKey, clause, page, responseSection,
+    #: responsePage, claim, evidenceQuote, evidenceLocated, verifiedBy,
+    #: verifiedAt, basis}. Copied in rather than joined, so a lineage entry
+    #: still describes what was actually checked after the rows move on.
+    lineage: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)

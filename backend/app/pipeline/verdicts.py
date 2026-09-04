@@ -31,6 +31,20 @@ logger = get_logger()
 #: copying a proposal into a second table.
 _EXCERPT = 1200
 
+#: How a person satisfied themselves. "Dana said this is satisfied" is a name
+#: against an outcome; "Dana counted 38 pages in the rendered PDF" is evidence,
+#: and only the second survives a debrief or makes a usable evaluation label.
+_BASES = frozenset(
+    {
+        "read_the_document",
+        "counted_in_the_file",
+        "checked_with_the_agency",
+        "team_knowledge",
+        "prior_bid",
+        "not_stated",
+    }
+)
+
 
 def outcome_of(machine_status: str, human_status: str, note: str | None) -> str:
     if human_status and machine_status and human_status != machine_status:
@@ -60,6 +74,10 @@ async def record(
     verification: str = "substantive",
     response_excerpt: str = "",
     actor: str = "",
+    basis: str = "not_stated",
+    basis_detail: str = "",
+    previous_verdict_id: str | None = None,
+    response_version: int = 0,
 ) -> Verdict:
     outcome = outcome_of(machine_status, human_status, note)
     row = Verdict(
@@ -83,6 +101,11 @@ async def record(
         response_excerpt=(response_excerpt or "")[:_EXCERPT],
         actor=actor or "",
         at=datetime.now(UTC),
+        basis=basis if basis in _BASES else "not_stated",
+        basis_detail=(basis_detail or "")[:1000],
+        previous_verdict_id=previous_verdict_id,
+        supersedes_verdict=bool(previous_verdict_id),
+        response_version=response_version,
     )
     db.add(row)
     logger.info(
@@ -130,9 +153,15 @@ def disagreement(rows: list[Verdict]) -> dict:
         r for r in corrected if r.machine_status == "satisfied" and r.human_status != "satisfied"
     ]
 
+    # A verification with no stated basis is a name against an outcome. Worth
+    # measuring: it is the difference between an audit trail and evidence.
+    unstated = sum(1 for row in rows if (row.basis or "not_stated") == "not_stated")
+
     return {
         "total": total,
         "confirmed": total - len(corrected) - len(flagged),
+        "withoutStatedBasis": unstated,
+        "byBasis": _group(lambda r: r.basis or "not_stated"),
         "corrected": len(corrected),
         "flagged": len(flagged),
         "correctionRate": round(len(corrected) / total, 4) if total else 0.0,

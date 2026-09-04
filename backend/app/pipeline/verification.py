@@ -298,6 +298,66 @@ def _requirements(requirements: list) -> list[QueueItem]:
     return items
 
 
+
+def _lineage_item(check, requirement, reference: str, items: list[QueueItem]) -> bool:
+    """What a response revision did to this verdict.
+
+    Both cases here are about checks that would otherwise be filtered out as
+    settled, which is exactly why they need saying: a signature carried across
+    a revision and an answer that vanished between drafts both look like
+    finished work from every other angle.
+    """
+    lineage = getattr(check, "lineage", None) or {}
+
+    if lineage.get("state") == "lost":
+        items.append(
+            QueueItem(
+                id=f"check:lost:{check.id}",
+                kind="response",
+                severity=BLOCKING if check.risk == "high" else IMPORTANT,
+                title=f"The section answering this is gone from the new draft — {reference}",
+                why=str(lineage.get("detail", ""))[:200],
+                consequence=(
+                    "An answer that existed in the previous draft does not exist in this one. "
+                    "Nothing else notices: the check simply reports a gap, as though the "
+                    "requirement had never been answered."
+                ),
+                tab="response",
+                reference=reference,
+                owner=check.owner,
+            )
+        )
+        return True
+
+    if getattr(check, "carried_verdict", False):
+        # It stands — the passage did not change — but nobody re-read the page,
+        # and on a mandatory requirement that is worth one look.
+        if requirement is not None and requirement.stakes == "disqualifying":
+            items.append(
+                QueueItem(
+                    id=f"check:carried:{check.id}",
+                    kind="response",
+                    severity=ROUTINE,
+                    title=f"A sign-off carried forward from an earlier draft — {reference}",
+                    why=(
+                        "The passage answering this did not change between drafts, so the "
+                        "verdict on it stands. Nobody has read it against the current draft."
+                    ),
+                    consequence=(
+                        "Almost certainly fine. Worth one look before submission on a mandatory "
+                        "requirement."
+                    ),
+                    tab="response",
+                    reference=reference,
+                    owner=check.owner,
+                    detail=str(lineage.get("detail", ""))[:200],
+                )
+            )
+        return True
+
+    return False
+
+
 def _checks(checks: list, by_id: dict) -> list[QueueItem]:
     """A check names its clause through the requirement it was made against.
 
@@ -307,8 +367,6 @@ def _checks(checks: list, by_id: dict) -> list[QueueItem]:
     """
     items: list[QueueItem] = []
     for check in checks:
-        if check.confirmed_by:
-            continue
         requirement = by_id.get(check.requirement_id)
         if requirement is not None and requirement.state != "open":
             # The clause was withdrawn or superseded. Whatever the check said
@@ -316,6 +374,14 @@ def _checks(checks: list, by_id: dict) -> list[QueueItem]:
             # to answer a requirement that no longer exists.
             continue
         reference = requirement.reference if requirement else check.requirement_id
+
+        if _lineage_item(check, requirement, reference, items):
+            continue
+
+        # Everything below is about a check nobody has settled. A confirmed one
+        # is finished work.
+        if check.confirmed_by:
+            continue
 
         if check.needs_confirmation:
             items.append(

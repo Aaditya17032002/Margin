@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -91,6 +91,32 @@ class Verdict(UUIDMixin, Base):
     #: The passage the machine was reasoning over. Without it a correction says
     #: someone disagreed and not what about.
     response_excerpt: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    # ── What it was based on ─────────────────────────────────────────────
+    #: How the person satisfied themselves. "Dana said this is satisfied" is a
+    #: name against an outcome; "Dana counted 38 pages in the rendered PDF" is
+    #: evidence, and only the second survives a debrief.
+    basis: Mapped[str] = mapped_column(
+        value_enum(
+            "read_the_document", "counted_in_the_file", "checked_with_the_agency",
+            "team_knowledge", "prior_bid", "not_stated",
+            name="verdict_basis",
+        ),
+        nullable=False,
+        default="not_stated",
+    )
+    basis_detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    #: The verdict this one revises, when a person changed their mind or a new
+    #: draft was checked. A chain rather than a flat log: "was this always
+    #: satisfied, or did somebody change it?" is a question a reviewer asks.
+    previous_verdict_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: True when this overturns a decision somebody had already made, as
+    #: opposed to being the first word on it.
+    supersedes_verdict: Mapped[bool] = mapped_column(nullable=False, default=False)
+    #: Which draft was in front of them. A verdict on draft 2 says nothing
+    #: about draft 4.
+    response_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     actor: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
