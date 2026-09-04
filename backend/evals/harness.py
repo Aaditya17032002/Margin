@@ -56,12 +56,19 @@ class Case:
     name: str
     path: Path
     text: str
+    #: "real" or "synthetic". Carried through every number below, because a
+    #: recall figure held up entirely by documents we wrote ourselves is a
+    #: measurement of our own assumptions about how agencies write.
     source: str
     expected: list[Expected]
     #: Categories where the labels list *every* instance, so precision is
     #: meaningful. Elsewhere only recall is measured, because a sweep tuned for
     #: recall will always fire on text nobody bothered to label.
     exhaustive: set[str] = field(default_factory=set)
+
+    @property
+    def is_real(self) -> bool:
+        return self.source == "real"
 
 
 def load_cases(directory: Path = CASES_DIR) -> list[Case]:
@@ -137,6 +144,7 @@ def score_case(case: Case) -> dict:
     return {
         "case": case.name,
         "source": case.source,
+        "real": case.is_real,
         "pages": len(layout.pages),
         "chunks": len(layout.chunks),
         "hits": len(hits),
@@ -156,15 +164,26 @@ def aggregate(results: list[dict]) -> dict:
             )
     for kind, bucket in totals.items():
         bucket["recall"] = round(bucket["found"] / bucket["expected"], 4) if bucket["expected"] else 1.0
-    overall_expected = sum(b["expected"] for b in totals.values())
-    overall_found = sum(b["found"] for b in totals.values())
+
     return {
         "byKind": totals,
-        "overall": {
-            "expected": overall_expected,
-            "found": overall_found,
-            "recall": round(overall_found / overall_expected, 4) if overall_expected else 1.0,
-        },
+        "overall": _tally(results),
+        # Reported separately and never merged. A corpus of documents we
+        # invented can report any number it likes; only the real half says
+        # anything about solicitations we did not write.
+        "real": _tally([r for r in results if r.get("real")]),
+        "synthetic": _tally([r for r in results if not r.get("real")]),
+    }
+
+
+def _tally(results: list[dict]) -> dict:
+    expected = sum(entry["expected"] for r in results for entry in r["byKind"].values())
+    found = sum(entry["found"] for r in results for entry in r["byKind"].values())
+    return {
+        "cases": len(results),
+        "expected": expected,
+        "found": found,
+        "recall": round(found / expected, 4) if expected else 1.0,
     }
 
 
@@ -184,12 +203,57 @@ def check(summary: dict, thresholds: dict) -> list[str]:
             failures.append(f"{kind}: no labelled examples in the corpus (floor {minimum:.0%})")
         elif actual + 1e-9 < minimum:
             failures.append(f"{kind}: recall {actual:.1%} below floor {minimum:.0%}")
+
     overall_min = thresholds.get("overallRecall")
     if overall_min is not None and summary["overall"]["recall"] + 1e-9 < overall_min:
         failures.append(
             f"overall: recall {summary['overall']['recall']:.1%} below floor {overall_min:.0%}"
         )
+
+    # A floor on real documents specifically. Once set, synthetic cases can no
+    # longer hold the gate up on their own — which is the whole point of
+    # distinguishing them.
+    real_min = thresholds.get("realRecall")
+    real = summary.get("real", {})
+    if real_min is not None:
+        if not real.get("cases"):
+            failures.append(
+                f"real: the corpus contains no real solicitations, and realRecall is set to "
+                f"{real_min:.0%}. Either add real cases or remove the floor deliberately."
+            )
+        elif real["recall"] + 1e-9 < real_min:
+            failures.append(f"real: recall {real['recall']:.1%} below floor {real_min:.0%}")
+
+    minimum_real_cases = thresholds.get("minimumRealCases")
+    if minimum_real_cases and real.get("cases", 0) < minimum_real_cases:
+        failures.append(
+            f"real: {real.get('cases', 0)} real case(s) in the corpus, {minimum_real_cases} required"
+        )
     return failures
+
+
+def corpus_warnings(results: list[dict], summary: dict) -> list[str]:
+    """Reasons to distrust the number, short of failing the build.
+
+    A recall figure is a claim about documents nobody in this repository wrote.
+    While the corpus cannot support that claim, the harness says so on every
+    run rather than letting a green number speak for itself.
+    """
+    warnings: list[str] = []
+    real = summary.get("real", {})
+    if not real.get("cases"):
+        warnings.append(
+            "Every case in this corpus is synthetic. These numbers measure the sweep against "
+            "text written to the same assumptions the sweep was built on, which is the one "
+            "thing an evaluation cannot test. Treat them as a regression alarm, not as "
+            "evidence of real-world recall."
+        )
+    elif real["cases"] < 3:
+        warnings.append(
+            f"Only {real['cases']} real case(s). One unusual document can move the real-recall "
+            "figure by a lot at this size."
+        )
+    return warnings
 
 
 def report(results: list[dict], summary: dict, thresholds: dict) -> str:
@@ -214,10 +278,14 @@ def report(results: list[dict], summary: dict, thresholds: dict) -> str:
             f"   {'ok' if ok else 'BELOW FLOOR'}"
         )
     lines.append("-" * 62)
-    overall = summary["overall"]
-    lines.append(
-        f"{'overall':<16}{overall['recall']:>8.1%}{overall['found']:>5}/{overall['expected']:<3}"
-    )
+    for label in ("overall", "real", "synthetic"):
+        bucket = summary.get(label if label != "overall" else "overall")
+        if not bucket or (label != "overall" and not bucket.get("cases")):
+            continue
+        suffix = "" if label == "overall" else f"   ({bucket['cases']} cases)"
+        lines.append(
+            f"{label:<16}{bucket['recall']:>8.1%}{bucket['found']:>5}/{bucket['expected']:<3}{suffix}"
+        )
 
     misses = [
         (kind, miss)
@@ -250,12 +318,28 @@ def main(argv: list[str] | None = None) -> int:
 
     print(report(results, summary, thresholds))
 
+    for warning in corpus_warnings(results, summary):
+        print(f"\n! {warning}", file=sys.stderr)
+
     if args.json_path:
         Path(args.json_path).write_text(
             json.dumps({"cases": results, "summary": summary, "thresholds": thresholds}, indent=2)
         )
 
+    # A recall number computed over unsound labels is worse than no number,
+    # so the corpus is checked on the same run rather than in a separate job
+    # somebody forgets to look at.
+    from evals import corpus as corpus_checks
+
+    corpus_problems = corpus_checks.validate(corpus_checks.load())
+    if corpus_problems:
+        print("\nCorpus problems (the recall figure above cannot be trusted):", file=sys.stderr)
+        for problem in corpus_problems:
+            print(f"  {problem}", file=sys.stderr)
+
     failures = check(summary, thresholds)
+    if corpus_problems:
+        failures.append(f"corpus: {len(corpus_problems)} label or provenance problem(s)")
     if failures:
         print("\nRecall regression:", file=sys.stderr)
         for failure in failures:

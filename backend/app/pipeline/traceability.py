@@ -206,6 +206,9 @@ Answer with JSON only: {{"status": "...", "detail": "...", "gap": "...", "quote"
 status must be exactly one of:
   "satisfied"    — a passage plainly and completely answers the requirement.
   "partial"      — a passage addresses it but leaves part of it unanswered.
+  "failed"       — a passage addresses it and states something that does not
+                   meet it: a smaller number than required, a narrower
+                   commitment, or the very thing the requirement forbids.
   "not_found"    — no passage addresses it.
   "unverifiable" — you cannot tell from these passages.
 
@@ -213,6 +216,11 @@ Rules you must follow:
 - Prefer "unverifiable" whenever you are unsure. A wrong "satisfied" causes a
   compliant-looking response to go out with a gap in it; a wrong
   "unverifiable" costs a person five minutes.
+- "failed" is not a stronger "not_found". Use it only when the response says
+  something specific that conflicts with the requirement — "Secret" where the
+  requirement says "Top Secret", business hours where it says 24x7, storage
+  abroad where it forbids it. A contradiction is a rewrite; an absence is a
+  blank page, and they are different work.
 - Never infer that a requirement is met because it would be reasonable, normal
   or implied. Only what the passages actually say counts.
 - "quote" must be copied verbatim from a passage, or left empty. Do not
@@ -271,7 +279,10 @@ async def _from_model(requirement, retriever: CorpusRetriever, llm) -> Trace:
         )
 
     status = answer.get("status", UNVERIFIABLE)
-    if status not in (SATISFIED, PARTIAL, NOT_FOUND, UNVERIFIABLE):
+    if status not in (SATISFIED, PARTIAL, FAILED, NOT_FOUND, UNVERIFIABLE):
+        # Anything outside the rubric is not a verdict. Coercing to
+        # `unverifiable` rather than guessing keeps a malformed answer from
+        # becoming a clearance.
         status = UNVERIFIABLE
 
     # A quote the model produced that is not in the response is a fabrication,

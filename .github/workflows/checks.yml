@@ -18,17 +18,33 @@ jobs:
       - name: Tests
         run: uv run pytest -q
 
+      # The corpus that holds the recall number up is checked first: a label
+      # quoting words the document does not carry looks exactly like an
+      # extraction failure, and a number computed over unsound labels is worse
+      # than no number.
+      - name: Evaluation corpus
+        run: uv run python -m evals.corpus validate
+
       # The recall gate. Deterministic extraction is scored against the
       # labelled corpus in evals/cases on every change, so a parser or pattern
       # edit cannot quietly reduce what Margin finds. It needs no API keys,
       # which is why it runs here rather than nightly and out of sight.
       - name: Extraction recall
         run: uv run python -m evals.harness --gate --json ../recall.json
+
+      # The machinery around the model: a verdict outside the rubric never
+      # becomes a clearance, an ungrounded quote downgrades the claim resting
+      # on it, and a mandatory requirement is never reported as settled. These
+      # hold whatever the model says, and they need no credentials.
+      - name: Response adjudication
+        run: uv run python -m evals.adjudication.runner --gate --json ../adjudication.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: extraction-recall
-          path: recall.json
+          path: |
+            recall.json
+            adjudication.json
 
   frontend:
     runs-on: ubuntu-latest

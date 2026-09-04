@@ -1,0 +1,150 @@
+{
+  "_note": "Each case is one requirement and the response passages a retriever would put in front of the model. `expected` is the verdict a careful reviewer would reach. `acceptable` lists verdicts that are wrong but not dangerous — nearly always `unverifiable`, because sending a person to look costs five minutes and a wrong `satisfied` ships a gap. A case with no `acceptable` entry admits no second-best answer.",
+  "cases": [
+    {
+      "id": "plain-answer",
+      "why": "The easy case. If this is not `satisfied` the rubric is too timid to be useful.",
+      "requirement": "The Offeror shall describe its approach to quality control for all deliverables.",
+      "reference": "L.4.2",
+      "stakes": "scored",
+      "passages": [
+        "Quality Control Approach. Every deliverable passes a two-stage review before release: a peer technical review against the acceptance criteria in the SOW, and a sign-off by the Quality Manager. Defects found after release are logged in our corrective action register and reviewed monthly."
+      ],
+      "expected": "satisfied",
+      "acceptable": ["partial"]
+    },
+    {
+      "id": "topic-without-answer",
+      "why": "The most common failure in practice: the response is *about* the right subject and answers none of it. A model reading for topical similarity says satisfied here.",
+      "requirement": "The Offeror shall describe its approach to quality control for all deliverables.",
+      "reference": "L.4.2",
+      "stakes": "scored",
+      "passages": [
+        "Quality is central to everything Acme does. Our people take pride in their work, and our clients consistently tell us that our commitment to excellence sets us apart. Quality is not a process to us; it is a culture."
+      ],
+      "expected": "not_found",
+      "acceptable": ["partial", "unverifiable"]
+    },
+    {
+      "id": "half-of-a-two-part-requirement",
+      "why": "Two obligations in one sentence, one answered. Reporting this satisfied is how half a requirement ships.",
+      "requirement": "The Contractor shall submit a monthly status report and hold a quarterly programme review with the Contracting Officer.",
+      "reference": "C.6.1",
+      "stakes": "scored",
+      "passages": [
+        "Reporting. Acme will deliver a monthly status report by the fifth working day of each month, covering schedule, risks, and open issues."
+      ],
+      "expected": "partial",
+      "acceptable": ["unverifiable"]
+    },
+    {
+      "id": "promise-without-substance",
+      "why": "\"We will comply\" is not compliance. A response that restates the requirement has answered nothing, and this is the single easiest thing for a model to be fooled by.",
+      "requirement": "The Offeror shall describe how it will maintain continuity of service during the transition period.",
+      "reference": "C.9",
+      "stakes": "disqualifying",
+      "passages": [
+        "Transition. Acme will maintain continuity of service throughout the transition period in full compliance with the requirements of Section C.9."
+      ],
+      "expected": "not_found",
+      "acceptable": ["partial", "unverifiable"]
+    },
+    {
+      "id": "answered-for-the-wrong-thing",
+      "why": "Plausible and wrong: the passage describes a clearance the requirement did not ask for. Accepting it would clear a mandatory requirement on the strength of a near-miss.",
+      "requirement": "All personnel assigned to this contract shall hold an active Top Secret clearance prior to award.",
+      "reference": "H.3",
+      "stakes": "disqualifying",
+      "passages": [
+        "Personnel Security. All Acme staff assigned to this programme hold an active Secret clearance, and our facility holds a Secret facility clearance under CAGE code 1ABC2."
+      ],
+      "expected": "failed",
+      "acceptable": ["partial", "not_found", "unverifiable"]
+    },
+    {
+      "id": "silence",
+      "why": "The response says nothing about it. There is a real difference between `not_found` and `unverifiable`, and a rubric that always hedges is as useless as one that always agrees.",
+      "requirement": "The Offeror shall provide an Organizational Conflict of Interest mitigation plan.",
+      "reference": "H.7",
+      "stakes": "disqualifying",
+      "passages": [
+        "Corporate Experience. Acme has delivered eleven enterprise integration programmes for federal customers since 2019, including four at this scale."
+      ],
+      "expected": "not_found",
+      "acceptable": []
+    },
+    {
+      "id": "answer-in-another-volume",
+      "why": "Genuinely ambiguous. The passage points somewhere the model cannot see. `unverifiable` is the right answer and `satisfied` is a fabrication.",
+      "requirement": "The Offeror shall describe its subcontractor management approach.",
+      "reference": "L.4.6",
+      "stakes": "scored",
+      "passages": [
+        "Subcontractor Management. Our approach to managing subcontractors is described in full in Volume II, Section 4, together with the flow-down provisions we apply."
+      ],
+      "expected": "unverifiable",
+      "acceptable": ["partial", "not_found"]
+    },
+    {
+      "id": "conditional-commitment",
+      "why": "A commitment made conditional on something the agency has not agreed to is not a commitment. Reading it as one is a scored-factor loss at best.",
+      "requirement": "The Contractor shall provide 24x7 support coverage for all production incidents.",
+      "reference": "C.4.3",
+      "stakes": "scored",
+      "passages": [
+        "Support Coverage. Acme provides support from 07:00 to 19:00 Eastern on business days. Should the Government require 24x7 coverage, we would be pleased to discuss an option CLIN to provide it."
+      ],
+      "expected": "failed",
+      "acceptable": ["partial", "not_found", "unverifiable"]
+    },
+    {
+      "id": "requirement-answered-across-two-passages",
+      "why": "Retrieval returned the answer in pieces. Reading only the first passage produces `partial` when the response is complete.",
+      "requirement": "The Offeror shall identify its Key Personnel and provide a resume for each.",
+      "reference": "L.5.1",
+      "stakes": "scored",
+      "passages": [
+        "Key Personnel. Acme designates three Key Personnel for this effort: Programme Manager (J. Okafor), Technical Lead (M. Silva), and Security Lead (R. Baptiste).",
+        "Appendix B contains a two-page resume for each of the three Key Personnel named in Section 5.1, in the format required by L.5.1."
+      ],
+      "expected": "satisfied",
+      "acceptable": ["partial"]
+    },
+    {
+      "id": "negated-requirement",
+      "why": "A prohibition. The response describes doing exactly what it forbids, which reads as a confident, on-topic answer to anything matching on words.",
+      "requirement": "The Contractor may not store Government Data outside the continental United States.",
+      "reference": "H.11",
+      "stakes": "disqualifying",
+      "passages": [
+        "Data Residency. Customer data is replicated across our primary region in Virginia and a secondary region in Dublin, Ireland, providing cross-continental resilience."
+      ],
+      "expected": "failed",
+      "acceptable": ["partial", "unverifiable"]
+    },
+    {
+      "id": "stale-boilerplate-naming-another-agency",
+      "why": "Reused proposal text that answers the requirement but names the wrong customer. The substance is right and a reviewer still has to see it.",
+      "requirement": "The Offeror shall describe its incident response process, including notification timeframes.",
+      "reference": "H.12",
+      "stakes": "scored",
+      "passages": [
+        "Incident Response. Acme notifies the Department of Veterans Affairs Contracting Officer within one hour of confirming a security incident, and provides a written report within 24 hours in the format prescribed by the VA."
+      ],
+      "expected": "partial",
+      "acceptable": ["satisfied", "unverifiable"]
+    },
+    {
+      "id": "quantified-requirement-unquantified-answer",
+      "why": "The requirement names a number and the response does not. This is exactly what a mechanical rule catches and a model glosses over.",
+      "requirement": "The Offeror shall demonstrate a minimum of five years of experience operating systems of comparable scale.",
+      "reference": "M.2.1",
+      "stakes": "disqualifying",
+      "passages": [
+        "Relevant Experience. Acme has extensive, long-standing experience operating large-scale citizen-facing systems for state and municipal government."
+      ],
+      "expected": "unverifiable",
+      "acceptable": ["not_found", "partial", "failed"]
+    }
+  ]
+}
