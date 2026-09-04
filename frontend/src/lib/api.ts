@@ -16,7 +16,7 @@ import type {
   AppNotification,
   DocType,
   ExportRecord,
-  FileNode,
+  RemoteEntry,
   Integration,
   IntegrationId,
   MatrixRow,
@@ -360,7 +360,11 @@ export const integrationsApi = {
   disconnect: (id: IntegrationId) =>
     api<Integration>(`/api/v1/integrations/${id}/disconnect`, { method: "DELETE" }),
 
-  files: (id: IntegrationId) => api<FileNode[]>(`/api/v1/integrations/${id}/files`),
+  /** One level of a connected source. `path` is a token this API issued. */
+  browse: (id: IntegrationId, path = "") =>
+    api<{ provider: string; path: string; entries: RemoteEntry[] }>(
+      `/api/v1/integrations/${id}/browse${path ? `?path=${encodeURIComponent(path)}` : ""}`,
+    ),
 
   import: (id: IntegrationId, fileIds: string[], analysisId?: string) =>
     api<{ imported: number; results: { fileId: string; analysisId?: string; error?: string }[] }>(

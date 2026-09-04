@@ -183,6 +183,20 @@ export interface ExternalResearch {
   at?: string | null;
 }
 
+/** One row in the source browser, whatever the provider calls it underneath. */
+export interface RemoteEntry {
+  /** Opaque token: hand it back to browse into this entry, or to import it. */
+  id: string;
+  name: string;
+  kind: "site" | "drive" | "folder" | "message" | "file";
+  size: number;
+  modified: string;
+  /** Second line — who sent the mail, who last touched the file, the site URL. */
+  subtitle: string;
+  /** True when Margin can read it. Everything else is a container you open. */
+  importable: boolean;
+}
+
 export interface Clin {
   id: string;
   number: string;

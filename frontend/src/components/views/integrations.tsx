@@ -13,13 +13,12 @@ import { Segmented } from "@/components/ui/controls";
 import { Callout } from "@/components/ui/feedback";
 import { ConfirmDialog } from "@/components/ui/overlay";
 import { notify } from "@/components/ui/toaster";
-import { FileTree } from "@/components/shell/import-picker";
+import { SourceBrowser } from "@/components/shell/source-browser";
 import { useIntegrationsStore, usePrefsStore } from "@/stores/workspace";
-import { useAnalysesStore } from "@/stores/analyses";
 import { useSessionStore } from "@/stores/session";
 import { useRouter } from "next/navigation";
 import { ApiError, integrationsApi } from "@/lib/api";
-import type { FileNode, Integration, IntegrationId } from "@/types";
+import type { Integration, IntegrationId, RemoteEntry } from "@/types";
 
 const ICONS: Record<IntegrationId, typeof Mail> = {
   outlook: Mail,
@@ -35,13 +34,13 @@ export function IntegrationsView() {
   const disconnect = useIntegrationsStore((s) => s.disconnect);
   const reconnect = useIntegrationsStore((s) => s.reconnect);
   const reload = useIntegrationsStore((s) => s.load);
-  const createAnalysis = useAnalysesStore((s) => s.createAnalysis);
   const defaultMode = usePrefsStore((s) => s.defaultMode);
   const user = useSessionStore((s) => s.user);
 
   const [connecting, setConnecting] = React.useState<IntegrationId | null>(null);
   const [confirm, setConfirm] = React.useState<Integration | null>(null);
   const [browsing, setBrowsing] = React.useState<IntegrationId>("sharepoint");
+  const [importing, setImporting] = React.useState<string | null>(null);
 
   // Microsoft returns the person here after consent, so the outcome of a
   // round trip that left the app has to be reported when they land back on it.
@@ -60,7 +59,7 @@ export function IntegrationsView() {
   }, [reload, router]);
 
   const browseSource = integrations.find((i) => i.id === browsing);
-  const browsable = integrations.filter((i) => i.id !== "outlook");
+  const browsable = integrations;
 
   /**
    * Connecting is a real Microsoft consent round trip when the deployment has
@@ -92,22 +91,34 @@ export function IntegrationsView() {
     });
   }
 
-  async function startFrom(file: FileNode, sourceId: IntegrationId) {
-    const id = await createAnalysis({
-      title: file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " "),
-      agency: "Pending intake",
-      mode: defaultMode,
-      fileName: file.name,
-      fileSize: file.size ?? 0,
-      source: sourceId,
-      owner: user?.name ?? "",
-    });
-    if (!id) {
-      notify.error("The import could not be started.");
-      return;
+  /**
+   * The real import: the server fetches the bytes from Microsoft, stores the
+   * extracted text, and queues the read. Creating an analysis with only a
+   * filename on it — which is what this used to do — left the run with nothing
+   * to read.
+   */
+  async function startFrom(entry: RemoteEntry, sourceId: IntegrationId) {
+    setImporting(entry.id);
+    try {
+      const result = await integrationsApi.import(sourceId, [entry.id]);
+      const first = result.results.find((r) => r.analysisId);
+      if (!first?.analysisId) {
+        notify.error("That document could not be imported.", {
+          description: result.results.find((r) => r.error)?.error,
+        });
+        return;
+      }
+      notify.success("Reading started.", {
+        description: `${entry.name} · ${defaultMode.replace("-", " ")} pass`,
+      });
+      router.push(`/app/analyses/${first.analysisId}/run`);
+    } catch (caught) {
+      notify.error("That document could not be imported.", {
+        description: caught instanceof ApiError ? caught.message : undefined,
+      });
+    } finally {
+      setImporting(null);
     }
-    notify.success("Import started.", { description: file.name });
-    router.push(`/app/analyses/${id}/run`);
   }
 
   return (
@@ -224,7 +235,7 @@ export function IntegrationsView() {
       <Panel>
         <PanelHeader
           title="Browse and import"
-          description="Pick a file and Margin starts reading it straight away."
+          description="Open a mailbox, a drive, or a SharePoint library. Pick a document and Margin starts reading it — the file never touches your laptop."
           actions={
             <Segmented
               ariaLabel="Source to browse"
@@ -240,7 +251,13 @@ export function IntegrationsView() {
               <p className="pb-3 font-mono text-2xs uppercase tracking-[0.13em] text-ink-faint">
                 {browseSource.account}
               </p>
-              <FileTree nodes={browseSource.tree} onPick={(node) => void startFrom(node, browseSource.id)} />
+              <SourceBrowser
+                key={browseSource.id}
+                provider={browseSource.id}
+                onPick={(entry) => void startFrom(entry, browseSource.id)}
+                busyId={importing}
+                className="max-h-[26rem]"
+              />
             </>
           ) : (
             <Well className="flex flex-wrap items-center justify-between gap-4">
