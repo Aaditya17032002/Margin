@@ -44,3 +44,6 @@ pgdata/
 
 # Redis snapshot written into the working directory by a local server run.
 dump.rdb
+
+.github-pat
+pull-and-start.ps1

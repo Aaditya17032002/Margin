@@ -22,4 +22,4 @@ class Integration(UUIDMixin, Base):
     connected_at: Mapped[str | None] = mapped_column(String(50), nullable=True)
     scopes: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     tree: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
-    token_ref: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    token_ref: Mapped[str | None] = mapped_column(Text, nullable=True)

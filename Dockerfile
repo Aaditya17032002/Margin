@@ -4,6 +4,8 @@ WORKDIR /app
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ .
+# Next may ship with no static assets; runtime still COPYs /app/public.
+RUN mkdir -p public
 RUN npm run build
 
 # ---- frontend runtime ----

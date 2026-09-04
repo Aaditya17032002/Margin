@@ -240,8 +240,16 @@ async def _get(access: str, path: str, **params: Any) -> dict:
         logger.error("graph_call_denied", path=path, status=response.status_code)
         raise GraphError("This connection is not permitted to read that. It may need re-authorising.")
     if response.status_code >= 400:
-        logger.error("graph_call_failed", path=path, status=response.status_code)
-        raise GraphError(f"Microsoft Graph returned {response.status_code} for {path}.")
+        # Prefer Graph's own message — "$orderby is not supported" beats a bare 400.
+        detail = ""
+        try:
+            err = response.json().get("error") or {}
+            detail = str(err.get("message") or "")[:240]
+        except Exception:
+            detail = (response.text or "")[:240]
+        logger.error("graph_call_failed", path=path, status=response.status_code, detail=detail)
+        suffix = f" {detail}" if detail else ""
+        raise GraphError(f"Microsoft Graph returned {response.status_code} for {path}.{suffix}")
     return response.json()
 
 
@@ -296,21 +304,23 @@ async def _browse_mail(access: str, path: str) -> list[RemoteEntry]:
         ]
 
     # The mailbox itself: recent threads that carry something readable.
-    # `$expand` matters — fetching attachments per message was a request per
-    # row, which made opening the mailbox take seconds.
+    # Graph rejects `$filter=hasAttachments` combined with `$orderby` (400),
+    # so order on the server and keep only messages that expand to a
+    # readable attachment. `$expand` keeps this one round-trip.
     payload = await _get(
         access,
         "/me/messages",
         **{
-            "$filter": "hasAttachments eq true",
-            "$select": "id,subject,receivedDateTime,from",
+            "$select": "id,subject,receivedDateTime,from,hasAttachments",
             "$expand": "attachments($select=id,name,size)",
             "$orderby": "receivedDateTime desc",
-            "$top": 40,
+            "$top": 50,
         },
     )
     entries: list[RemoteEntry] = []
     for message in payload.get("value", []):
+        if not message.get("hasAttachments"):
+            continue
         readable = [a for a in (message.get("attachments") or []) if _readable(str(a.get("name") or ""))]
         if not readable:
             continue
@@ -335,7 +345,9 @@ async def _browse_onedrive(access: str, path: str) -> list[RemoteEntry]:
     endpoint = (
         f"/me/drive/items/{path[5:]}/children" if path.startswith("item:") else "/me/drive/root/children"
     )
-    payload = await _get(access, endpoint, **{"$top": 200, "$orderby": "folder,name"})
+    # Graph only allows orderby on name/size/lastModifiedDateTime — not
+    # `folder`. Folders-first ordering is done in `_drive_entries`.
+    payload = await _get(access, endpoint, **{"$top": 200, "$orderby": "name"})
     return _drive_entries(payload, prefix="")
 
 
@@ -376,7 +388,7 @@ async def _browse_sharepoint(access: str, path: str) -> list[RemoteEntry]:
         if rest.startswith("item:")
         else f"/drives/{drive_id}/root/children"
     )
-    payload = await _get(access, endpoint, **{"$top": 200, "$orderby": "folder,name"})
+    payload = await _get(access, endpoint, **{"$top": 200, "$orderby": "name"})
     return _drive_entries(payload, prefix=f"drive:{drive_id}/")
 
 
