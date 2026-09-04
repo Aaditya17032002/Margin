@@ -303,8 +303,11 @@ class DeadlineResponse(CamelModel):
     at: str
     timezone: str
     kind: str
+    source: str = "document"
     analysis_id: str = Field(alias="analysisId")
     analysis_title: str = Field(alias="analysisTitle")
+    analysis_stage: str = Field("", alias="analysisStage")
+    go_no_go: str = Field("", alias="goNoGo")
 
 
 # ── Search ───────────────────────────────────────────────────────────────

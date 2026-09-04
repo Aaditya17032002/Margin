@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import UTC, datetime
 
@@ -66,8 +67,16 @@ async def generate_report(
     db.add(report)
     await db.flush()
 
-    # Enqueue report generation
-    await enqueue("app.workers.generate_report.generate_report_task", report.id)
+    # A report that was never queued must not be handed back as `generating` —
+    # it would sit in the export list forever with nothing rendering it.
+    job = await enqueue("app.workers.generate_report.generate_report_task", report.id)
+    if job is None:
+        report.status = "failed"
+        await db.flush()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The export queue is unavailable. The report was not started.",
+        )
     await redis.set(f"report_job:{report.id}", analysis_id, ex=3600)
     if body.idempotency_key:
         await redis.set(f"report_idem:{body.idempotency_key}", report.id, ex=3600)
@@ -84,8 +93,18 @@ async def download_report(report_id: str, user: CurrentUser, db: DbSession):
     if not report:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
 
+    if report.status == "failed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That report failed to render. Generate it again.",
+        )
     if report.status != "ready" or not report.storage_path:
         raise HTTPException(status_code=status.HTTP_202_ACCEPTED, detail="Report still generating")
+    if not os.path.exists(report.storage_path):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="The rendered file is no longer on disk. Generate the report again.",
+        )
 
     return FileResponse(
         report.storage_path,

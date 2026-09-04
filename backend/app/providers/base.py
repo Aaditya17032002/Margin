@@ -54,10 +54,17 @@ class AgentResult:
 
 @dataclass
 class ResearchResult:
-    """Result from external research (Deep Research / Bing)."""
+    """Result from external research (Deep Research / Bing).
+
+    ``status`` and ``detail`` exist so a run can say *why* there is no external
+    research rather than quietly producing a deep-research pass that looks
+    exactly like a standard one.
+    """
     findings: list[dict] = field(default_factory=list)
     sources: list[dict] = field(default_factory=list)
     query_used: str = ""
+    status: str = "completed"  # completed | skipped | rate_limited | failed | timeout
+    detail: str = ""
 
 
 class DocIntelProvider(ABC):

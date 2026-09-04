@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { Check, CloudUpload, FolderTree, Mail, Plug, RefreshCw, ShieldCheck, Unplug } from "lucide-react";
+import { Check, CloudUpload, Copy, FolderTree, Mail, Plug, RefreshCw, ShieldCheck, Unplug } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { relative } from "@/lib/dates";
@@ -18,6 +18,7 @@ import { useIntegrationsStore, usePrefsStore } from "@/stores/workspace";
 import { useAnalysesStore } from "@/stores/analyses";
 import { useSessionStore } from "@/stores/session";
 import { useRouter } from "next/navigation";
+import { ApiError, integrationsApi } from "@/lib/api";
 import type { FileNode, Integration, IntegrationId } from "@/types";
 
 const ICONS: Record<IntegrationId, typeof Mail> = {
@@ -33,6 +34,7 @@ export function IntegrationsView() {
   const connect = useIntegrationsStore((s) => s.connect);
   const disconnect = useIntegrationsStore((s) => s.disconnect);
   const reconnect = useIntegrationsStore((s) => s.reconnect);
+  const reload = useIntegrationsStore((s) => s.load);
   const createAnalysis = useAnalysesStore((s) => s.createAnalysis);
   const defaultMode = usePrefsStore((s) => s.defaultMode);
   const user = useSessionStore((s) => s.user);
@@ -41,15 +43,52 @@ export function IntegrationsView() {
   const [confirm, setConfirm] = React.useState<Integration | null>(null);
   const [browsing, setBrowsing] = React.useState<IntegrationId>("sharepoint");
 
+  // Microsoft returns the person here after consent, so the outcome of a
+  // round trip that left the app has to be reported when they land back on it.
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get("connected");
+    const error = params.get("error");
+    if (!connected && !error) return;
+    if (connected) {
+      notify.success(`${connected} connected.`);
+      void reload({ force: true });
+    } else if (error) {
+      notify.error("That connection did not complete.", { description: error });
+    }
+    router.replace("/app/integrations");
+  }, [reload, router]);
+
   const browseSource = integrations.find((i) => i.id === browsing);
   const browsable = integrations.filter((i) => i.id !== "outlook");
 
+  /**
+   * Connecting is a real Microsoft consent round trip when the deployment has
+   * credentials for one. A 501 means it does not, and the connection is marked
+   * by hand instead so a local or demo workspace still works — the import path
+   * will then say plainly that there is nothing behind the connection.
+   */
   async function runConnect(integration: Integration) {
     setConnecting(integration.id);
+    try {
+      const { url } = await integrationsApi.authorize(integration.id);
+      window.location.assign(url);
+      return;
+    } catch (error) {
+      const notConfigured = error instanceof ApiError && error.status === 501;
+      if (!notConfigured) {
+        setConnecting(null);
+        notify.error(`${integration.name} could not be connected.`, {
+          description: error instanceof Error ? error.message : undefined,
+        });
+        return;
+      }
+    }
+
     connect(integration.id, user?.email);
     setConnecting(null);
     notify.success(`${integration.name} connected.`, {
-      description: user?.email ? `Signed in as ${user.email}.` : undefined,
+      description: "Microsoft sign-in is not configured here, so this connection is local only.",
     });
   }
 
@@ -80,7 +119,7 @@ export function IntegrationsView() {
       />
 
       <Callout tone="slate" title="Nothing leaves your tenant" icon={<ShieldCheck aria-hidden />}>
-        Documents are read in place. Margin stores citations and findings, never a second copy of the file.
+        Read-only, one file at a time, only when someone asks for it. Nothing is crawled, mirrored, or indexed in the background.
       </Callout>
 
       <ul className="grid gap-4 md:grid-cols-3">
@@ -180,6 +219,8 @@ export function IntegrationsView() {
         })}
       </ul>
 
+      <IngestAddress />
+
       <Panel>
         <PanelHeader
           title="Browse and import"
@@ -232,5 +273,93 @@ export function IntegrationsView() {
         }}
       />
     </div>
+  );
+}
+
+/**
+ * The drop box.
+ *
+ * Not every source deserves a connector. A mail rule, a Power Automate flow, a
+ * cron job and a partner's script can all already POST a file, and this is the
+ * one address that turns any of them into an analysis. It is shown here rather
+ * than buried in a doc because the person setting up that flow is the person
+ * looking at this page.
+ */
+function IngestAddress() {
+  const [address, setAddress] = React.useState<string | null>(null);
+  const [copied, setCopied] = React.useState(false);
+  const [revealed, setRevealed] = React.useState(false);
+
+  React.useEffect(() => {
+    let live = true;
+    integrationsApi
+      .ingestAddress()
+      .then((res) => {
+        if (live) setAddress(res.url);
+      })
+      .catch(() => {
+        /* The panel simply does not appear if the deployment has no ingest route. */
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (!address) return null;
+
+  const masked = address.replace(/\/ingest\/.*$/, "/ingest/••••••••••••");
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="Send documents in"
+        description="One address for anything that can post a file — a mail rule, a Power Automate flow, a script."
+      />
+      <div className="space-y-4 p-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="min-w-0 flex-1 truncate rounded-md border border-line bg-paper-sunk px-3 py-2 font-mono text-xs text-ink-soft">
+            {revealed ? address : masked}
+          </code>
+          <Button variant="quiet" size="sm" onClick={() => setRevealed((prev) => !prev)}>
+            {revealed ? "Hide" : "Reveal"}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(address);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1600);
+              } catch {
+                notify.error("Could not copy — reveal it and copy by hand.");
+              }
+            }}
+          >
+            {copied ? <Check /> : <Copy />}
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        </div>
+
+        <Callout tone="ochre" title="This URL is a credential">
+          Anyone holding it can start an analysis in this workspace. Store it as a
+          secret wherever it is used, and never paste it into a ticket or a chat.
+        </Callout>
+
+        <Well>
+          <p className="mb-2 text-xs text-ink-soft">Post a document to it:</p>
+          <pre className="scroll-region-x overflow-x-auto font-mono text-2xs leading-relaxed text-ink-soft">
+{`curl -X POST "<your ingest URL>" \\
+     -F "file=@RFP-2026-0041.pdf" \\
+     -F "title=ARTS 311 CRM" \\
+     -F "mode=standard"`}
+          </pre>
+          <p className="mt-2 text-xs text-ink-faint">
+            The reading pass starts immediately and the analysis appears in the board.
+            Setup for Outlook, SharePoint and OneDrive is in INTEGRATIONS.md.
+          </p>
+        </Well>
+      </div>
+    </Panel>
   );
 }

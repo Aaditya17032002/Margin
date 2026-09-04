@@ -8,6 +8,7 @@ export const WORKSPACE_TABS = [
   { id: "risks", label: "Risks & Red Flags" },
   { id: "questions", label: "Q&A Builder" },
   { id: "silent", label: "SILENT Ledger" },
+  { id: "research", label: "External Research" },
   { id: "amendments", label: "Amendments" },
   { id: "versions", label: "Versions & Activity" },
 ] as const;

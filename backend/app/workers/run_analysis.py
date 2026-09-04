@@ -21,11 +21,27 @@ from app.db.models.matrix_row import MatrixRow
 from app.db.models.notification import Notification
 from app.db.models.question import Question
 from app.db.models.user import User
-from app.pipeline.ingest import full_pipeline
+from app.pipeline.ingest import full_pipeline_from_text
 from app.providers.base import ChunkResult
 from app.workers import derive
+from app.workers.schedule import build_schedule
 
 logger = get_logger()
+
+RESEARCH_NOTES = {
+    "rate_limited": "External research was unavailable on this pass — the deep-research deployment was rate limited. Every finding above comes from the document itself.",
+    "timeout": "External research did not return in time on this pass. Every finding above comes from the document itself.",
+    "skipped": "External research is not configured for this workspace.",
+    "failed": "External research could not be completed on this pass.",
+}
+
+
+def _research_note(research: dict) -> str:
+    status = str(research.get("status") or "")
+    if status in ("completed", "not_requested", ""):
+        return ""
+    return RESEARCH_NOTES.get(status, RESEARCH_NOTES["failed"])
+
 
 PLACEHOLDER_TEXT = (
     "No readable text was extracted from this document.\n"
@@ -66,7 +82,7 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
 
             # ── Step 1: the document itself ──────────────────────────────
             raw_text, filename = await _document_text(db, analysis)
-            layout, _embeddings = await full_pipeline(raw_text.encode("utf-8"), filename)
+            layout, _embeddings = await full_pipeline_from_text(raw_text, filename)
 
             chunks = layout.chunks or [
                 ChunkResult(text=raw_text[:400], page=1, section_path="Section A")
@@ -77,6 +93,7 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
                 analysis_id=analysis_id,
                 mode=analysis.mode,
                 chunks=chunks,
+                pages=layout.pages,
                 redis=redis,
             )
 
@@ -95,7 +112,21 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
             analysis.gates = gate_list
             analysis.evaluation = derive.evaluation_factors(findings.get("evaluation", []))
             analysis.risks = derive.risk_items(findings.get("risks", []))
+            # The calendar is built on every run, whatever the bid decision:
+            # a team decides *because* they can see the dates.
+            analysis.dates = build_schedule(orchestration.get("dates") or [])
             analysis.summary = derive.summary(analysis.title, findings, gate_list)
+
+            # A deep-research pass that could not reach the research service is
+            # still a valid read of the document, but the analysis must not
+            # imply research happened. The note travels on the summary and the
+            # version entry, which is where a reviewer looks weeks later.
+            research = orchestration.get("research") or {}
+            analysis.research = research
+            research_note = _research_note(research)
+            if research_note:
+                analysis.summary = f"{analysis.summary} {research_note}"
+
             analysis.page_count = layout.page_count
             analysis.pages = layout.pages
             analysis.stage = "review"

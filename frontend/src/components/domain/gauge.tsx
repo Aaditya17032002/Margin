@@ -10,9 +10,9 @@ import type { Gate, GoNoGo } from "@/types";
 
 /**
  * The gauge answers one question — how far open is the gate? — by reading the
- * four go/no-go gates rather than by taking a score as input. A hard gate that
- * is unmet shuts the needle down regardless of how well the rest reads, because
- * that is how the decision actually works.
+ * analysis's own gates rather than by taking a score as input. A hard gate that
+ * is unmet caps the reading regardless of how well the rest reads, because that
+ * is how the decision actually works.
  */
 export function gateScore(gates: Gate[]) {
   if (gates.length === 0) return 0;
@@ -38,8 +38,19 @@ export function verdictFor(score: number, decision: GoNoGo) {
   return { label: "Leaning no-bid", tone: "seal" as const };
 }
 
-const ARC_START = -212;
-const ARC_END = 32;
+/**
+ * A true half-circle: the baseline is flat, the ends sit level with it, and
+ * NO-BID and BID label the two ends from below where nothing can reach them.
+ * The old arc opened past horizontal on both sides, which pushed its end
+ * labels up into the verdict line.
+ */
+const ARC_START = 180;
+const ARC_END = 360;
+
+/** One geometry, scaled by CSS. Text inside the SVG scales with the dial. */
+const BOX = { w: 240, h: 134, cx: 120, cy: 108, r: 88, stroke: 10 };
+
+const SIZE_WIDTH = { sm: "10rem", md: "15rem", lg: "19rem" } as const;
 
 function polar(cx: number, cy: number, r: number, angleDeg: number) {
   const rad = (angleDeg * Math.PI) / 180;
@@ -52,6 +63,9 @@ function arcPath(cx: number, cy: number, r: number, from: number, to: number) {
   const large = Math.abs(to - from) > 180 ? 1 : 0;
   return `M ${start.x} ${start.y} A ${r} ${r} 0 ${large} 1 ${end.x} ${end.y}`;
 }
+
+/** Eleven ticks, one per tenth, drawn just outside the band. */
+const TICKS = Array.from({ length: 11 }, (_, i) => i / 10);
 
 export function GoNoGoGauge({
   gates,
@@ -71,104 +85,136 @@ export function GoNoGoGauge({
   const verdict = verdictFor(score, decision);
   const angle = ARC_START + (ARC_END - ARC_START) * score;
   const hardFailed = gates.some((g) => g.weight === "hard" && g.met === false);
-
-  const dims = {
-    sm: { box: 140, r: 52, stroke: 7, cx: 70, cy: 74 },
-    md: { box: 200, r: 76, stroke: 9, cx: 100, cy: 106 },
-    lg: { box: 260, r: 100, stroke: 11, cx: 130, cy: 138 },
-  }[size];
+  const met = gates.filter((g) => g.met === true).length;
 
   const toneVar = `var(--${verdict.tone})`;
+  const marker = polar(BOX.cx, BOX.cy, BOX.r, angle);
+  const track = arcPath(BOX.cx, BOX.cy, BOX.r, ARC_START, ARC_END);
 
   return (
-    <div className={cn("relative inline-flex flex-col items-center", className)}>
+    <div
+      className={cn("relative inline-flex w-full flex-col items-center", className)}
+      style={{ maxWidth: SIZE_WIDTH[size] }}
+    >
       <svg
-        viewBox={`0 0 ${dims.box} ${dims.box * 0.76}`}
-        className="w-full max-w-full"
+        viewBox={`0 0 ${BOX.w} ${BOX.h}`}
+        className="w-full overflow-visible"
         role="img"
-        aria-label={`Go/no-go reading: ${verdict.label}, ${Math.round(score * 100)} percent of gates satisfied`}
+        aria-label={`Go/no-go reading: ${verdict.label}, ${met} of ${gates.length} gates met, ${Math.round(score * 100)} percent`}
       >
+        {/* The band a reader measures against: one solid, quiet stroke. A
+            dotted track reads as decoration and makes the dial look drawn
+            rather than machined. */}
         <path
-          d={arcPath(dims.cx, dims.cy, dims.r, ARC_START, ARC_END)}
+          d={track}
           fill="none"
           stroke="var(--paper-sunk)"
-          strokeWidth={dims.stroke}
+          strokeWidth={BOX.stroke}
           strokeLinecap="round"
         />
         <path
-          d={arcPath(dims.cx, dims.cy, dims.r, ARC_START, ARC_END)}
+          d={track}
           fill="none"
-          stroke="var(--line-strong)"
-          strokeWidth={dims.stroke}
+          stroke="var(--line)"
+          strokeWidth={1}
           strokeLinecap="round"
-          opacity={0.5}
-          strokeDasharray="1 7"
+          opacity={0.9}
         />
+
+        <g stroke="var(--line-strong)" strokeLinecap="round">
+          {TICKS.map((t) => {
+            const a = ARC_START + (ARC_END - ARC_START) * t;
+            const major = t === 0 || t === 0.5 || t === 1;
+            const inner = polar(BOX.cx, BOX.cy, BOX.r + BOX.stroke / 2 + 3, a);
+            const outer = polar(BOX.cx, BOX.cy, BOX.r + BOX.stroke / 2 + (major ? 9 : 6), a);
+            return (
+              <line
+                key={t}
+                x1={inner.x}
+                y1={inner.y}
+                x2={outer.x}
+                y2={outer.y}
+                strokeWidth={major ? 1.6 : 1}
+                opacity={major ? 0.9 : 0.5}
+              />
+            );
+          })}
+        </g>
+
+        {/* The reading itself. `pathLength` keeps the sweep proportional to the
+            arc, so the fill and the marker arrive together. */}
         <motion.path
-          d={arcPath(dims.cx, dims.cy, dims.r, ARC_START, Math.max(ARC_START + 0.4, angle))}
+          d={arcPath(BOX.cx, BOX.cy, BOX.r, ARC_START, Math.max(ARC_START + 0.35, angle))}
           fill="none"
           stroke={toneVar}
-          strokeWidth={dims.stroke}
+          strokeWidth={BOX.stroke}
           strokeLinecap="round"
-          initial={reduce ? false : { pathLength: 0, opacity: 0 }}
-          animate={{ pathLength: 1, opacity: 1 }}
-          transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+          initial={reduce ? false : { pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: reduce ? 0 : 0.85, ease: [0.16, 1, 0.3, 1] }}
         />
 
-        {/* Needle — a machined pointer, weighted at the hub. */}
+        {/* A marker where the reading lands, instead of a needle. A needle on a
+            half dial sweeps straight through the verdict at the halfway mark,
+            which is precisely where an unresolved analysis sits. */}
         <motion.g
-          initial={reduce ? false : { rotate: ARC_START - 8 }}
-          animate={{ rotate: angle }}
-          transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 90, damping: 15, mass: 1.1 }}
-          style={{ originX: `${dims.cx}px`, originY: `${dims.cy}px` }}
+          initial={reduce ? false : { opacity: 0, scale: 0.6 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: reduce ? 0 : 0.55, duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+          style={{ originX: `${marker.x}px`, originY: `${marker.y}px` }}
         >
-          <line
-            x1={dims.cx}
-            y1={dims.cy}
-            x2={dims.cx + dims.r - dims.stroke * 1.6}
-            y2={dims.cy}
-            stroke="var(--ink)"
-            strokeWidth={size === "sm" ? 1.6 : 2.2}
-            strokeLinecap="round"
-          />
+          <circle cx={marker.x} cy={marker.y} r={BOX.stroke / 2 + 2.5} fill="var(--paper-raised)" />
+          <circle cx={marker.x} cy={marker.y} r={BOX.stroke / 2 - 0.5} fill={toneVar} />
+          <circle cx={marker.x} cy={marker.y} r={BOX.stroke / 2 - 3.4} fill="var(--paper-raised)" />
         </motion.g>
-        <circle cx={dims.cx} cy={dims.cy} r={size === "sm" ? 4 : 5.5} fill="var(--ink)" />
-        <circle cx={dims.cx} cy={dims.cy} r={size === "sm" ? 1.6 : 2.2} fill="var(--paper-raised)" />
 
+        {/* The verdict lives inside the dial, above the baseline — the one
+            place on a half-circle nothing else occupies. */}
         <text
-          x={dims.cx - dims.r + 2}
-          y={dims.cy + 20}
-          className="fill-[var(--ink-faint)] font-mono"
-          fontSize={size === "sm" ? 7 : 9}
+          x={BOX.cx}
+          y={BOX.cy - 30}
           textAnchor="middle"
+          className="font-display"
+          fill={toneVar}
+          fontSize={22}
+          style={{ letterSpacing: "-0.01em" }}
+        >
+          {verdict.label}
+        </text>
+        <text
+          x={BOX.cx}
+          y={BOX.cy - 12}
+          textAnchor="middle"
+          className="fill-[var(--ink-faint)] font-mono"
+          fontSize={8}
+          style={{ letterSpacing: "0.12em" }}
+        >
+          {met} OF {gates.length} GATES MET
+        </text>
+
+        {/* Below the baseline, level with the arc ends, anchored outward so
+            they lean away from the dial rather than into it. */}
+        <text
+          x={BOX.cx - BOX.r}
+          y={BOX.cy + 18}
+          textAnchor="start"
+          className="fill-[var(--ink-faint)] font-mono"
+          fontSize={8}
+          style={{ letterSpacing: "0.1em" }}
         >
           NO-BID
         </text>
         <text
-          x={dims.cx + dims.r - 2}
-          y={dims.cy + 20}
+          x={BOX.cx + BOX.r}
+          y={BOX.cy + 18}
+          textAnchor="end"
           className="fill-[var(--ink-faint)] font-mono"
-          fontSize={size === "sm" ? 7 : 9}
-          textAnchor="middle"
+          fontSize={8}
+          style={{ letterSpacing: "0.1em" }}
         >
           BID
         </text>
       </svg>
-
-      <div className="-mt-2 text-center">
-        <p
-          className={cn(
-            "font-display leading-none",
-            size === "sm" ? "text-lg" : size === "md" ? "text-2xl" : "text-3xl",
-          )}
-          style={{ color: toneVar }}
-        >
-          {verdict.label}
-        </p>
-        <p className="mt-1 font-mono text-2xs uppercase tracking-[0.13em] text-ink-faint">
-          {gates.filter((g) => g.met === true).length} of {gates.length} gates met
-        </p>
-      </div>
 
       <AnimatePresence>
         {showSeal && hardFailed ? (
@@ -177,9 +223,9 @@ export function GoNoGoGauge({
             animate={reduce ? { opacity: 1 } : { opacity: 1, scale: 1, rotate: -11 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={reduce ? { duration: 0.2 } : { ...stamp, delay: 0.55 }}
-            className="pointer-events-none absolute -right-1 top-2"
+            className="pointer-events-none absolute -right-2 bottom-0"
           >
-            <WaxSeal className={size === "sm" ? "size-11" : "size-16"} label="A hard gate is unmet" />
+            <WaxSeal className={size === "sm" ? "size-11" : "size-14"} label="A hard gate is unmet" />
           </motion.div>
         ) : null}
       </AnimatePresence>

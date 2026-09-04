@@ -59,6 +59,15 @@ export interface Citation {
   quote: string;
   /** Normalised 0–1 box on the page, used by the source viewer's overlay layer. */
   bbox: { x: number; y: number; w: number; h: number };
+  /**
+   * `[firstLine, lastLine]` on that page, when the quote was resolved against
+   * the extract. Present means the highlight is exact rather than inferred.
+   */
+  lines?: [number, number] | number[] | null;
+  /** False when the quote was not found in the document — say so, do not guess. */
+  located?: boolean;
+  /** 1 for a verbatim match, lower for an approximate one. */
+  matchScore?: number;
 }
 
 export interface Finding {
@@ -115,8 +124,54 @@ export interface KeyDate {
   /** ISO string, always stored in UTC. */
   at: string;
   timezone: string;
-  kind: "questions-due" | "proposal-due" | "site-visit" | "award" | "amendment" | "start";
-  citation?: Citation;
+  /** Every stage a pursuit passes through, in the order it happens. */
+  kind:
+    | "intent-due"
+    | "questions-due"
+    | "answers-expected"
+    | "site-visit"
+    | "solution-review"
+    | "draft-review"
+    | "final-review"
+    | "proposal-due"
+    | "orals"
+    | "award"
+    | "start"
+    | "amendment";
+  citation?: Citation | null;
+  /**
+   * `document` when the solicitation stated this date and the citation proves
+   * it; `derived` when Margin placed the stage around a date that was stated.
+   * A reader has to be able to tell the two apart at a glance.
+   */
+  source?: "document" | "derived";
+}
+
+/** One page a deep-research pass actually read on the open web. */
+export interface ResearchSource {
+  url: string;
+  title: string;
+  /** The host, e.g. `acquisition.gov`. Whose site it is carries most of the weight. */
+  site: string;
+}
+
+/**
+ * What the open web said, which is never the same kind of thing as what the
+ * document says. It has no page, no clause, and no citation — only sources.
+ */
+export interface ExternalResearch {
+  status:
+    | "not_requested"
+    | "completed"
+    | "rate_limited"
+    | "timeout"
+    | "skipped"
+    | "failed";
+  detail: string;
+  query: string;
+  summary: string;
+  sources: ResearchSource[];
+  at?: string | null;
 }
 
 export interface Clin {
@@ -199,6 +254,8 @@ export interface Analysis {
   amendments: AmendmentRecord[];
   pages: DocumentPage[];
   versions: { id: string; label: string; at: string; author: string; note: string }[];
+  /** Only a deep-research pass fills this in; other modes leave it empty. */
+  research?: ExternalResearch;
 }
 
 export interface MatrixRow {

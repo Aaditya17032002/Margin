@@ -41,4 +41,11 @@ CMD ["gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "-b", "0
 
 # ---- background worker ----
 FROM py-base AS worker
+# The worker is the only stage that converts a report to PDF, and the export
+# picker offers PDF, so the converter has to be here or that option is broken.
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libreoffice-writer fonts-dejavu-core \
+ && rm -rf /var/lib/apt/lists/*
+USER app
 CMD ["arq", "app.workers.settings.WorkerSettings"]

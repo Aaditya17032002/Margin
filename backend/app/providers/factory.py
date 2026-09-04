@@ -88,6 +88,8 @@ def get_research_provider() -> ResearchProvider:
             deployment=settings.AZURE_DEEP_RESEARCH_DEPLOYMENT,
             region=settings.AZURE_DEEP_RESEARCH_REGION,
             api_version=settings.AZURE_DEEP_RESEARCH_API_VERSION,
+            max_attempts=settings.AZURE_DEEP_RESEARCH_MAX_ATTEMPTS,
+            retry_base_seconds=settings.AZURE_DEEP_RESEARCH_RETRY_SECONDS,
         )
     from app.providers.mock import MockResearchProvider
     return MockResearchProvider()

@@ -47,7 +47,10 @@ export function MatrixView() {
       />
 
       {/* The grid gets the whole remaining height and scrolls inside itself. */}
-      <div className="flex min-h-0 flex-col px-6 pb-6 pt-5 lg:px-10">
+      {/* `@container` is load-bearing: the matrix sizes its own header row
+          with container queries, and without a container to query it collapses
+          to a single column that eats the height the table needs. */}
+      <div className="@container flex min-h-0 min-w-0 flex-1 flex-col px-6 pb-6 pt-5 lg:px-10">
         <ComplianceMatrix
           analysisId={scope === "all" ? undefined : scope}
           showAnalysisColumn={scope === "all"}

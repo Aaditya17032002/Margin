@@ -111,9 +111,16 @@ class MockAgentProvider(AgentProvider):
             }
             if agent_id in specialist_map:
                 res = await specialist_map[agent_id].execute(chunks)
-                return AgentResult(findings=res["findings"], events=res["events"])
+                findings = _reground(res["findings"], kwargs.get("anchor"), chunks)
+                return AgentResult(findings=findings, events=res["events"])
         except Exception:
             pass
+
+        if agent_id == "dates":
+            return AgentResult(findings=_mock_dates(), events=[
+                {"event": "agent_started", "agent": "dates"},
+                {"event": "agent_completed", "agent": "dates"},
+            ])
 
         findings = []
         events = []
@@ -227,4 +234,61 @@ def _get_mock_findings(agent_id: str, chunks: list[ChunkResult]) -> list[dict]:
             "verified": None,
             "flagged": False,
         })
+    return findings
+
+
+def _mock_dates() -> list[dict]:
+    """Two stated dates, so the derived calendar has something to hang off in
+    local development. Real runs get these from the document."""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    return [
+        {
+            "label": "Written questions due",
+            "kind": "questions-due",
+            "at": (now + timedelta(days=12)).replace(hour=17, minute=0, second=0, microsecond=0).isoformat(),
+            "timezone": "America/New_York",
+            "citation": None,
+        },
+        {
+            "label": "Proposal due",
+            "kind": "proposal-due",
+            "at": (now + timedelta(days=30)).replace(hour=14, minute=0, second=0, microsecond=0).isoformat(),
+            "timezone": "America/New_York",
+            "citation": None,
+        },
+    ]
+
+
+def _reground(findings: list[dict], anchor: Any, chunks: list[ChunkResult]) -> list[dict]:
+    """Resolve canned citations against the real document.
+
+    The stub specialists carry fixed page numbers, and a local workspace that
+    shows a confident "p.24" pointing nowhere teaches exactly the wrong thing
+    about what a citation means here.
+    """
+    if anchor is None:
+        return findings
+    from app.pipeline.anchor import resolve_citation
+
+    fallback = (
+        {"page": chunks[0].page, "section": chunks[0].section_path, "bbox": chunks[0].bbox}
+        if chunks
+        else None
+    )
+    for finding in findings:
+        citation = finding.get("citation")
+        if not isinstance(citation, dict):
+            continue
+        finding["citation"] = {
+            "id": citation.get("id") or "",
+            **resolve_citation(
+                anchor,
+                str(citation.get("quote") or ""),
+                claimed_page=citation.get("page"),
+                claimed_section=str(citation.get("section") or ""),
+                fallback=fallback,
+            ),
+        }
     return findings

@@ -26,6 +26,7 @@ export function SourceViewer({
   const reduce = useReducedMotion();
   const page = analysis.pages.find((p) => p.page === citation.page);
   const highlightRef = React.useRef<HTMLSpanElement>(null);
+  const span = useCitedLines(citation, page?.lines);
 
   React.useEffect(() => {
     highlightRef.current?.scrollIntoView({
@@ -35,14 +36,11 @@ export function SourceViewer({
   }, [citation.id, reduce]);
 
   if (!page) {
-    return (
-      <div className="rounded-md border border-dashed border-line-strong bg-paper-sunk px-4 py-8 text-center text-sm text-ink-faint">
-        Page {citation.page} is not in the indexed extract for this document.
-      </div>
-    );
+    return <Unlocated citation={citation} reason="missing-page" />;
   }
-
-  const quoteLines = citation.quote.split(" ");
+  if (citation.located === false) {
+    return <Unlocated citation={citation} reason="unmatched" />;
+  }
 
   return (
     <div className={cn("space-y-3", className)}>
@@ -76,7 +74,7 @@ export function SourceViewer({
           ) : null}
           <div className="space-y-2.5 font-mono text-xs leading-[1.75] text-ink-soft">
             {page.lines.map((line, index) => {
-              const isCited = citation.quote.includes(line) || quoteLines.includes(line);
+              const isCited = span !== null && index >= span[0] && index <= span[1];
               return (
                 <p key={index} className="flex gap-3">
                   <span className="w-4 shrink-0 select-none text-right text-2xs text-ink-faint/60">
@@ -84,7 +82,7 @@ export function SourceViewer({
                   </span>
                   {isCited ? (
                     <motion.span
-                      ref={index === page.lines.findIndex((l) => citation.quote.includes(l)) ? highlightRef : undefined}
+                      ref={index === span[0] ? highlightRef : undefined}
                       initial={reduce ? false : { backgroundSize: "0% 100%" }}
                       animate={{ backgroundSize: "100% 100%" }}
                       transition={{ duration: 0.42, ease: [0.32, 0.72, 0, 1], delay: 0.06 }}
@@ -139,5 +137,84 @@ function PageMap({
         />
       </svg>
     </span>
+  );
+}
+
+/**
+ * Which lines of the page the quote covers.
+ *
+ * The backend resolves this when it grounds the citation, and that answer is
+ * authoritative — it searched the whole document, not one page. The client-side
+ * match is only for citations written before grounding existed, and it is
+ * deliberately strict: the old code asked whether the quote *contained* the
+ * line, which is true of every blank line on the page, so every source view
+ * opened with the empty lines lit up and scrolled to the first of them.
+ */
+function useCitedLines(
+  citation: Citation,
+  lines: string[] | undefined,
+): [number, number] | null {
+  return React.useMemo(() => {
+    const given = citation.lines;
+    if (Array.isArray(given) && given.length === 2) {
+      const [first, last] = given;
+      if (Number.isInteger(first) && Number.isInteger(last) && first >= 0) {
+        return [first, Math.max(first, last)];
+      }
+    }
+    if (!lines?.length) return null;
+
+    const needle = squash(citation.quote);
+    if (needle.length < 16) return null;
+
+    let first = -1;
+    let last = -1;
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = squash(lines[i]);
+      // A line counts as cited only if it carries real text that the quote
+      // actually contains — eight characters is past "the", "and", "1.".
+      if (line.length >= 8 && needle.includes(line)) {
+        if (first === -1) first = i;
+        last = i;
+      }
+    }
+    return first === -1 ? null : [first, last];
+  }, [citation.lines, citation.quote, lines]);
+}
+
+function squash(text: string): string {
+  return text
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+/**
+ * A citation with no home in the document. Saying that plainly is worth more
+ * than a highlight over an arbitrary line: it tells a reader this one finding
+ * needs checking, without casting doubt on the rest of the page.
+ */
+function Unlocated({ citation, reason }: { citation: Citation; reason: "missing-page" | "unmatched" }) {
+  return (
+    <div className="space-y-3">
+      <div className="rounded-md border border-dashed border-line-strong bg-paper-sunk px-4 py-5">
+        <p className="text-sm font-medium text-ink">
+          {reason === "missing-page"
+            ? `Page ${citation.page} is not in the indexed extract.`
+            : "This quote could not be found in the document."}
+        </p>
+        <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
+          {reason === "missing-page"
+            ? "The document may have been re-uploaded since this pass ran. Re-run the analysis to re-anchor its sources."
+            : "Margin anchors every citation by searching the extract for the quoted text. This one did not match, so the finding is shown without a source rather than pointed at the wrong clause."}
+        </p>
+      </div>
+      {citation.quote ? (
+        <blockquote className="border-l-2 border-[color-mix(in_oklab,var(--seal)_40%,transparent)] pl-3 text-sm italic leading-relaxed text-ink-soft">
+          “{citation.quote}”
+        </blockquote>
+      ) : null}
+    </div>
   );
 }

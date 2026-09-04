@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
-from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
@@ -17,28 +15,10 @@ from app.core.security import AuthUser
 from app.core.logging import get_logger
 from app.db.models.analysis import Analysis
 from app.db.models.document import Document
-from app.pipeline.extract import extract_text
+from app.core.documents import ALLOWED_KINDS, store_document, to_response as _to_response
 
 router = APIRouter(tags=["documents"])
 logger = get_logger()
-
-ALLOWED_KINDS = {"base", "attachment", "amendment"}
-
-
-def _to_response(d: Document) -> dict:
-    return {
-        "id": d.id,
-        "analysisId": d.analysis_id,
-        "fileName": d.file_name,
-        "fileSize": d.file_size or 0,
-        "contentType": d.content_type or "",
-        "kind": d.doc_kind,
-        "version": d.version,
-        "pageCount": d.page_count or 0,
-        "hasText": bool(d.raw_text),
-        "at": d.created_at.isoformat() if isinstance(d.created_at, datetime) else str(d.created_at),
-    }
-
 
 async def _load_analysis(analysis_id: str, user: AuthUser, db: AsyncSession) -> Analysis:
     result = await db.execute(
@@ -80,49 +60,14 @@ async def upload_document(
     if not content:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="That file is empty.")
 
-    filename = Path(file.filename or "document").name
-    doc_id = f"doc_{uuid.uuid4().hex[:12]}"
-    raw_text = extract_text(content, filename)
-
-    storage_path: str | None = None
-    try:
-        directory = Path(settings.UPLOADS_DIR) / user.org_id / analysis_id
-        directory.mkdir(parents=True, exist_ok=True)
-        target = directory / f"{doc_id}{Path(filename).suffix}"
-        target.write_bytes(content)
-        storage_path = str(target)
-    except OSError as exc:
-        # The extracted text is what a run actually needs, so a read-only or
-        # full volume degrades the upload rather than failing it.
-        logger.warning("upload_store_failed", error=str(exc), analysis_id=analysis_id)
-
-    existing = await db.execute(
-        select(Document).where(Document.analysis_id == analysis_id, Document.doc_kind == kind)
+    document = await store_document(
+        db,
+        analysis,
+        content=content,
+        filename=Path(file.filename or "document").name,
+        kind=kind,
+        content_type=file.content_type,
     )
-    version = len(existing.scalars().all()) + 1
-
-    document = Document(
-        id=doc_id,
-        analysis_id=analysis_id,
-        org_id=user.org_id,
-        file_name=filename,
-        file_size=len(content),
-        content_type=file.content_type or "application/octet-stream",
-        storage_path=storage_path,
-        doc_kind=kind,
-        version=version,
-        page_count=max(1, raw_text.count("\f") + 1) if raw_text else 0,
-        raw_text=raw_text or None,
-    )
-    db.add(document)
-
-    if kind == "base":
-        analysis.file_name = filename
-        analysis.file_size = len(content)
-        analysis.updated_at = datetime.now(UTC)
-
-    await db.flush()
-    logger.info("document_uploaded", analysis_id=analysis_id, doc_id=doc_id, chars=len(raw_text))
     return _to_response(document)
 
 
@@ -135,3 +80,5 @@ async def list_documents(analysis_id: str, user: CurrentUser, db: DbSession):
         .order_by(Document.created_at.asc())
     )
     return [_to_response(d) for d in result.scalars().all()]
+
+

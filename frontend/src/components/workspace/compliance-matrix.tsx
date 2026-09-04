@@ -295,7 +295,7 @@ export function ComplianceMatrix({
 
   return (
     <div className={cn("flex flex-col gap-4", className)}>
-      <div className="grid shrink-0 gap-3 @xl:grid-cols-2 @4xl:grid-cols-4">
+      <div className="grid shrink-0 grid-cols-2 gap-3 @2xl:grid-cols-4">
         <Stat label="Requirements" value={String(progress.total)} />
         <Stat label="Disqualifying" value={String(progress.disqualifying)} tone="seal" />
         <Stat label="Unassigned" value={String(progress.unassigned)} tone={progress.unassigned ? "ochre" : undefined} />
@@ -502,7 +502,17 @@ export function ComplianceMatrix({
           }
         />
       ) : (
-        <TableFrame className="min-h-0 flex-1">
+        <TableFrame
+          className="min-h-0 flex-1"
+          footer={
+            <Pagination
+              page={table.getState().pagination.pageIndex}
+              pageCount={table.getPageCount()}
+              total={filtered.length}
+              onPageChange={(page) => table.setPageIndex(page)}
+            />
+          }
+        >
           <Table>
             <thead>
               {table.getHeaderGroups().map((group) => (
@@ -531,12 +541,6 @@ export function ComplianceMatrix({
               ))}
             </tbody>
           </Table>
-          <Pagination
-            page={table.getState().pagination.pageIndex}
-            pageCount={table.getPageCount()}
-            total={filtered.length}
-            onPageChange={(page) => table.setPageIndex(page)}
-          />
         </TableFrame>
       )}
     </div>

@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
-import { ArrowRight, CircleSlash, FileDiff, MessageSquarePlus, Minus, Plus } from "lucide-react";
+import { ArrowRight, CircleSlash, ExternalLink, FileDiff, Globe, MessageSquarePlus, Minus, Plus } from "lucide-react";
 
 import { cn, formatCurrency, pluralize } from "@/lib/utils";
 import { longDate, relative } from "@/lib/dates";
@@ -648,6 +648,161 @@ export function SilentPanel({ analysis }: { analysis: Analysis }) {
           );
         })}
       </motion.ul>
+    </div>
+  );
+}
+
+/* ================================================================ */
+/* External research                                                 */
+/* ================================================================ */
+
+const RESEARCH_TROUBLE: Record<string, { title: string; body: string }> = {
+  rate_limited: {
+    title: "The research service was at its rate limit",
+    body: "Margin retried and could not get through. Everything else in this analysis still comes from the document itself.",
+  },
+  timeout: {
+    title: "The research pass did not return in time",
+    body: "Everything else in this analysis still comes from the document itself.",
+  },
+  skipped: {
+    title: "External research is not configured for this workspace",
+    body: "Deep-research runs will read the document only until Microsoft and the research deployment are set up.",
+  },
+  failed: {
+    title: "External research could not be completed",
+    body: "Everything else in this analysis still comes from the document itself.",
+  },
+};
+
+/**
+ * Everything Margin read on the open web, and nowhere else.
+ *
+ * This is deliberately a separate tab rather than findings mixed in with the
+ * rest. A claim from acquisition.gov and a clause on page 24 of the
+ * solicitation are different kinds of evidence, and a reader deciding whether
+ * to bid has to be able to tell which one they are looking at without
+ * checking. Every claim here is answerable with "according to whom?", so every
+ * source is listed, linked, and named by its host.
+ */
+export function ResearchPanel({ analysis }: { analysis: Analysis }) {
+  const reduce = useReducedMotion();
+  const research = analysis.research;
+  // An analysis stored before this tab existed has no `research` object at
+  // all, and one duplicated from another has an empty one. Both mean the same
+  // thing — nobody has searched the web for this — and neither should crash.
+  const status = research?.status ?? "not_requested";
+  const sources = research?.sources ?? [];
+
+  if (!research || status === "not_requested") {
+    return (
+      <EmptyState
+        title="This pass did not search the web"
+        description="Only a Deep Research read looks outside the document. Re-run this analysis in Deep Research mode to add current procurement rules, evaluation practice, and regulatory context — each one with the page it came from."
+      />
+    );
+  }
+
+  const trouble = status === "completed" ? null : RESEARCH_TROUBLE[status];
+
+  return (
+    <div className="space-y-5">
+      <Callout tone="slate" title="Read on the open web, not in your document">
+        Nothing on this tab is a clause in the solicitation. It is background on
+        the rules the solicitation sits inside, and every claim carries the page
+        it came from. Check it before you rely on it.
+      </Callout>
+
+      {trouble ? (
+        <Callout tone="ochre" title={trouble.title}>
+          {trouble.body}
+          {research.detail ? (
+            <span className="mt-1.5 block font-mono text-2xs text-ink-faint">{research.detail}</span>
+          ) : null}
+        </Callout>
+      ) : null}
+
+      {research.query ? (
+        <Panel>
+          <PanelHeader
+            title="What Margin searched for"
+            description="Built from the document's own identity — never from its text, which is not ours to publish."
+          />
+          <div className="px-5 pb-5">
+            <Well>
+              <p className="font-mono text-xs leading-relaxed text-ink-soft">{research.query}</p>
+            </Well>
+          </div>
+        </Panel>
+      ) : null}
+
+      {research.summary ? (
+        <Panel>
+          <PanelHeader
+            title="What it found"
+            actions={
+              research.at ? (
+                <span className="font-mono text-2xs text-ink-faint">{relative(research.at)}</span>
+              ) : null
+            }
+          />
+          <div className="space-y-3 px-5 pb-5 text-sm leading-relaxed text-ink-soft">
+            {research.summary
+              .split(/\n{2,}/)
+              .filter(Boolean)
+              .map((para, index) => (
+                <p key={index}>{para}</p>
+              ))}
+          </div>
+        </Panel>
+      ) : null}
+
+      <Panel>
+        <PanelHeader
+          title={sources.length ? pluralize(sources.length, "source") : "Sources"}
+          description="Every page the research pass actually opened."
+        />
+        {sources.length === 0 ? (
+          <div className="px-5 pb-5">
+            <p className="text-sm text-ink-faint">
+              This pass returned no sources, so nothing above can be traced to a page.
+              Treat it as a lead to check, not as evidence.
+            </p>
+          </div>
+        ) : (
+          <motion.ul
+            variants={reduce ? undefined : staggerList()}
+            initial={reduce ? undefined : "hidden"}
+            animate={reduce ? undefined : "visible"}
+            className="divide-y divide-line border-t border-line"
+          >
+            {sources.map((source) => (
+              <motion.li key={source.url} variants={reduce ? undefined : listItem}>
+                <a
+                  href={source.url}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  className="group flex items-start gap-3 px-5 py-3.5 transition-colors duration-150 hover:bg-paper-sunk"
+                >
+                  <Globe className="mt-0.5 size-3.5 shrink-0 text-ink-faint" aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm text-ink underline-offset-4 group-hover:underline">
+                      {source.title || source.url}
+                    </span>
+                    <span className="mt-0.5 block truncate font-mono text-2xs text-ink-faint">
+                      {source.site || source.url}
+                    </span>
+                  </span>
+                  <ExternalLink
+                    className="mt-0.5 size-3.5 shrink-0 text-ink-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                    aria-hidden
+                  />
+                </a>
+              </motion.li>
+            ))}
+          </motion.ul>
+        )}
+      </Panel>
     </div>
   );
 }

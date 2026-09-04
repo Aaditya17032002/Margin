@@ -38,6 +38,7 @@ import {
   QAndABuilder,
   RisksPanel,
   SilentPanel,
+  ResearchPanel,
   VersionsPanel,
 } from "@/components/workspace/panels";
 import { useAnalysisData } from "@/hooks/use-workspace-data";
@@ -367,6 +368,7 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
                 {tab === "risks" ? <RisksPanel analysis={analysis} /> : null}
                 {tab === "questions" ? <QAndABuilder analysis={analysis} /> : null}
                 {tab === "silent" ? <SilentPanel analysis={analysis} /> : null}
+                {tab === "research" ? <ResearchPanel analysis={analysis} /> : null}
                 {tab === "amendments" ? <AmendmentsPanel analysis={analysis} /> : null}
                 {tab === "versions" ? <VersionsPanel analysis={analysis} /> : null}
               </motion.div>

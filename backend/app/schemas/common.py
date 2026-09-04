@@ -109,6 +109,14 @@ class Citation(CamelModel):
     section: str
     quote: str
     bbox: BBox
+    #: The line range on that page the quote was resolved to, when it was
+    #: resolved at all. The workspace highlights exactly these lines instead of
+    #: guessing which ones the quote covers.
+    lines: list[int] | None = None
+    #: False when the quote could not be found in the extract. A reader is told
+    #: rather than being scrolled to an arbitrary line and left to wonder.
+    located: bool = False
+    match_score: float = 0.0
 
 
 class Finding(CamelModel):
@@ -163,8 +171,24 @@ class KeyDate(CamelModel):
     label: str
     at: str
     timezone: str
-    kind: Literal["questions-due", "proposal-due", "site-visit", "award", "amendment", "start"]
+    kind: Literal[
+        "intent-due",
+        "questions-due",
+        "answers-expected",
+        "site-visit",
+        "solution-review",
+        "draft-review",
+        "final-review",
+        "proposal-due",
+        "orals",
+        "award",
+        "start",
+        "amendment",
+    ]
     citation: Citation | None = None
+    #: "document" when the solicitation stated this date, "derived" when Margin
+    #: placed it around one that was stated. A reader must be able to tell.
+    source: Literal["document", "derived"] = "document"
 
 
 class Clin(CamelModel):
@@ -204,6 +228,33 @@ class VersionRecord(CamelModel):
     at: str
     author: str
     note: str
+
+
+class ResearchSource(CamelModel):
+    """One page a deep-research pass actually read."""
+
+    url: str
+    title: str = ""
+    #: The host, shown next to the title. Whose site a claim came from is most
+    #: of what tells a reader how much to trust it.
+    site: str = ""
+
+
+class ExternalResearch(CamelModel):
+    """What the open web said, kept separate from what the document says.
+
+    A claim in here is never a citation: it has no page, no clause, and no
+    standing against the solicitation. The workspace shows it under its own
+    heading with its sources attached, so the distinction survives contact
+    with a reader in a hurry.
+    """
+
+    status: str = "not_requested"  # completed | rate_limited | timeout | skipped | failed | not_requested
+    detail: str = ""
+    query: str = ""
+    summary: str = ""
+    sources: list[ResearchSource] = []
+    at: str | None = None
 
 
 class FileNode(CamelModel):

@@ -28,8 +28,13 @@ async def list_deadlines(user: CurrentUser, db: DbSession):
                 "at": d.get("at", ""),
                 "timezone": d.get("timezone", "UTC"),
                 "kind": d.get("kind", "proposal-due"),
+                "source": d.get("source", "document"),
                 "analysisId": a.id,
                 "analysisTitle": a.title,
+                # The calendar is built for every analysis, so the view needs to
+                # be able to tell a live pursuit from one already decided.
+                "analysisStage": a.stage,
+                "goNoGo": a.go_no_go,
             })
 
     # Sort by date

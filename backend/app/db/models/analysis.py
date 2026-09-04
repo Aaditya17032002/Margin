@@ -88,3 +88,8 @@ class Analysis(UUIDMixin, SoftDeleteMixin, Base):
     amendments: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     pages: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     versions: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    #: What a deep-research pass read on the open web, kept apart from anything
+    #: the solicitation says. Shape: {status, query, summary, sources: [...], at}.
+    #: External claims and document clauses must never be shown as the same kind
+    #: of thing, so they are not stored as the same kind of thing either.
+    research: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
