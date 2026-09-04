@@ -712,7 +712,7 @@ class AzureResearchProvider(ResearchProvider):
                 detail=message or code or status,
             )
 
-        text, sources = _parse_responses_output(body)
+        text, sources, claims = _parse_responses_output(body)
         findings = []
         if text:
             findings.append(
@@ -723,8 +723,22 @@ class AzureResearchProvider(ResearchProvider):
                     "source": "azure-deep-research",
                 }
             )
-        logger.info("deep_research_complete", response_id=response_id, sources=len(sources), chars=len(text))
-        return ResearchResult(findings=findings, sources=sources, query_used=query, status="completed")
+        attributed = sum(1 for c in claims if c["sources"])
+        logger.info(
+            "deep_research_complete",
+            response_id=response_id,
+            sources=len(sources),
+            chars=len(text),
+            claims=len(claims),
+            attributed=attributed,
+        )
+        return ResearchResult(
+            findings=findings,
+            sources=sources,
+            claims=claims,
+            query_used=query,
+            status="completed",
+        )
 
 
 RETRYABLE_RESEARCH_STATUSES = {"rate_limited"}
@@ -760,22 +774,37 @@ def outcome_retry_delay(outcome: ResearchResult, base: float, attempt: int) -> f
     return min(300.0, base * (2 ** (attempt - 1))) * (0.8 + random.random() * 0.4)
 
 
-def _parse_responses_output(body: dict[str, Any]) -> tuple[str, list[dict]]:
-    texts: list[str] = []
+def _parse_responses_output(body: dict[str, Any]) -> tuple[str, list[dict], list[dict]]:
+    """Pull the report, its sources, and which source backs which paragraph.
+
+    The Responses API attaches ``url_citation`` annotations to each block of
+    output text, carrying the character range of the sentence they support.
+    That is the honest basis for per-claim attribution: it comes from the
+    search tool recording what it actually read, not from asking the model
+    afterwards which page it was thinking of.
+
+    Returns ``(report, sources, claims)`` where a claim is one paragraph and
+    the URLs whose citation spans fall inside it. A paragraph with no spans
+    gets an empty list, and the workspace says so rather than borrowing a
+    neighbour's source.
+    """
+    blocks: list[tuple[str, list[dict]]] = []
     sources: list[dict] = []
     seen: set[str] = set()
 
+    def remember(url: Any, title: Any) -> None:
+        if not url or str(url) in seen:
+            return
+        seen.add(str(url))
+        sources.append({"url": str(url), "title": str(title or url)})
+
     def walk(node: Any) -> None:
         if isinstance(node, dict):
-            ntype = node.get("type")
-            if ntype in {"output_text", "text"} and node.get("text"):
-                texts.append(str(node["text"]))
-            url = node.get("url") or node.get("uri")
-            title = node.get("title") or node.get("name")
-            if url and str(url) not in seen:
-                seen.add(str(url))
-                sources.append({"url": str(url), "title": str(title or url)})
-            for annotation in node.get("annotations") or []:
+            annotations = [a for a in (node.get("annotations") or []) if isinstance(a, dict)]
+            if node.get("type") in {"output_text", "text"} and node.get("text"):
+                blocks.append((str(node["text"]), annotations))
+            remember(node.get("url") or node.get("uri"), node.get("title") or node.get("name"))
+            for annotation in annotations:
                 walk(annotation)
             for key in ("content", "output", "message"):
                 if key in node:
@@ -785,9 +814,54 @@ def _parse_responses_output(body: dict[str, Any]) -> tuple[str, list[dict]]:
                 walk(item)
 
     walk(body.get("output"))
-    if not texts and body.get("output_text"):
-        texts.append(str(body["output_text"]))
-    return "\n\n".join(texts).strip(), sources
+    if not blocks and body.get("output_text"):
+        blocks.append((str(body["output_text"]), []))
+
+    # Stitch the blocks into one report while keeping every annotation's range
+    # valid against the stitched text.
+    separator = "\n\n"
+    parts: list[str] = []
+    spans: list[tuple[int, int, str]] = []
+    cursor = 0
+    for text, annotations in blocks:
+        for annotation in annotations:
+            url = annotation.get("url") or annotation.get("uri")
+            if not url:
+                continue
+            start = annotation.get("start_index")
+            end = annotation.get("end_index")
+            if not isinstance(start, int) or not isinstance(end, int) or end <= start:
+                continue
+            spans.append((cursor + start, cursor + end, str(url)))
+        parts.append(text)
+        cursor += len(text) + len(separator)
+
+    report = separator.join(parts).strip()
+    return report, sources, _claims_from_spans(separator.join(parts), spans)
+
+
+def _claims_from_spans(report: str, spans: list[tuple[int, int, str]]) -> list[dict]:
+    """Split the report into paragraphs and give each one the sources it cites."""
+    if not report.strip():
+        return []
+
+    claims: list[dict] = []
+    offset = 0
+    for paragraph in re.split(r"\n{2,}", report):
+        start, end = offset, offset + len(paragraph)
+        offset = end + 2
+        body = paragraph.strip()
+        if not body:
+            continue
+        cited: list[str] = []
+        for span_start, span_end, url in spans:
+            # Any overlap counts: a citation often marks the sentence it
+            # supports, which can straddle the paragraph break in the source
+            # text even though it reads as belonging to one of them.
+            if span_start < end and span_end > start and url not in cited:
+                cited.append(url)
+        claims.append({"text": body, "sources": cited})
+    return claims
 
 
 def build_llm_from_settings() -> AzureLLMProvider:

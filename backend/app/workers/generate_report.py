@@ -292,9 +292,22 @@ def _render_markdown(
         else:
             if research.get("query"):
                 out += ["", f"**Searched for:** {research['query']}"]
-            if research.get("summary"):
-                out += ["", str(research["summary"])]
             sources = research.get("sources") or []
+            by_url = {str(s.get("url")): s for s in sources}
+            claims = research.get("claims") or []
+            if claims:
+                for claim in claims:
+                    out += ["", str(claim.get("text") or "")]
+                    cited = [by_url.get(url) for url in (claim.get("sources") or [])]
+                    links = [
+                        f"[{c.get('site') or c.get('title')}]({c.get('url')})" for c in cited if c
+                    ]
+                    out.append(
+                        f"  *Source: {', '.join(links)}*" if links
+                        else "  *No source was cited for this paragraph.*"
+                    )
+            elif research.get("summary"):
+                out += ["", str(research["summary"])]
             out += ["", "### Sources", ""]
             if not sources:
                 out.append("This pass returned no sources. Treat the above as a lead to check, not as evidence.")
@@ -334,6 +347,14 @@ def _render_markdown(
     with open(filepath, "w", encoding="utf-8") as handle:
         handle.write("\n".join(out) + "\n")
     return filepath
+
+
+def _small(paragraph) -> None:  # noqa: ANN001 — python-docx has no stubs
+    from docx.shared import Pt
+
+    for run in paragraph.runs:
+        run.font.size = Pt(8)
+        run.italic = True
 
 
 def _cite(citation: dict | None) -> str:
@@ -426,12 +447,28 @@ def _research(doc, analysis: Analysis) -> None:
 
     if research.get("query"):
         doc.add_paragraph(f"Searched for: {research['query']}")
-    if research.get("summary"):
+
+    sources = research.get("sources") or []
+    by_url = {str(s.get("url")): s for s in sources}
+    claims = research.get("claims") or []
+    if claims:
+        # Each paragraph is followed by the pages that back it. A reader
+        # checking one sentence should not have to guess which of a dozen
+        # sources at the end of the section it came from.
+        for claim in claims:
+            doc.add_paragraph(str(claim.get("text") or ""))
+            cited = [by_url.get(url) for url in (claim.get("sources") or [])]
+            named = [str(c.get("site") or c.get("title") or "") for c in cited if c]
+            attribution = doc.add_paragraph(
+                f"Source: {', '.join(named)}" if named
+                else "No source was cited for this paragraph — check it before relying on it."
+            )
+            _small(attribution)
+    elif research.get("summary"):
         for para in str(research["summary"]).split("\n\n"):
             if para.strip():
                 doc.add_paragraph(para.strip())
 
-    sources = research.get("sources") or []
     if not sources:
         doc.add_paragraph(
             "This pass returned no sources, so nothing above can be traced to a "

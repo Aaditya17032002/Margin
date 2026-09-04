@@ -234,7 +234,7 @@ class KnowledgeResponse(CamelModel):
 
 class ReportGenerateRequest(CamelModel):
     template_name: str = Field(alias="templateName")
-    format: Literal["DOCX", "PDF"] = "DOCX"
+    format: Literal["DOCX", "PDF", "MD"] = "DOCX"
     destination: Literal["download", "onedrive", "outlook"] = "download"
     idempotency_key: str | None = Field(None, alias="idempotencyKey")
 

@@ -159,12 +159,14 @@ async def run_orchestration(
             generic_query = _generic_research_query(all_findings)
             logger.info("deep_research_query", query=generic_query)
             result = await research_provider.research(generic_query)
+            sources = _dedupe_sources(result.sources)
             research = {
                 "status": result.status,
                 "detail": result.detail,
                 "query": result.query_used,
                 "summary": "\n\n".join(str(f.get("summary") or "") for f in result.findings).strip(),
-                "sources": _dedupe_sources(result.sources),
+                "sources": sources,
+                "claims": _attributed_claims(result.claims, sources),
                 "at": datetime.now(UTC).isoformat(),
             }
             await redis.publish(channel, AgentEvent(
@@ -266,6 +268,27 @@ def _dedupe_sources(sources: list[dict]) -> list[dict]:
             }
         )
     return out[:40]
+
+
+def _attributed_claims(claims: list[dict], sources: list[dict]) -> list[dict]:
+    """Keep each paragraph with the sources that actually survived into the list.
+
+    A claim pointing at a URL the panel does not show is worse than an
+    unattributed one: the reader sees a citation marker and cannot follow it.
+    """
+    kept = {source["url"] for source in sources}
+    out: list[dict] = []
+    for claim in claims:
+        text = str(claim.get("text") or "").strip()
+        if not text:
+            continue
+        out.append(
+            {
+                "text": text,
+                "sources": [url for url in (claim.get("sources") or []) if url in kept],
+            }
+        )
+    return out
 
 
 def _research_note(status: str, detail: str) -> str:

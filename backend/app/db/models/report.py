@@ -16,7 +16,7 @@ class Report(UUIDMixin, Base):
     analysis_title: Mapped[str] = mapped_column(String(500), nullable=False)
     template_name: Mapped[str] = mapped_column(String(255), nullable=False)
     format: Mapped[str] = mapped_column(
-        value_enum("DOCX", "PDF", name="report_format"),
+        value_enum("DOCX", "PDF", "MD", name="report_format"),
         nullable=False,
         default="DOCX",
     )

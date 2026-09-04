@@ -159,6 +159,13 @@ export interface ResearchSource {
  * What the open web said, which is never the same kind of thing as what the
  * document says. It has no page, no clause, and no citation — only sources.
  */
+/** One paragraph of the research report and the pages that back it. */
+export interface ResearchClaim {
+  text: string;
+  /** URLs into `ExternalResearch.sources`. Empty means nothing was cited. */
+  sources: string[];
+}
+
 export interface ExternalResearch {
   status:
     | "not_requested"
@@ -171,6 +178,8 @@ export interface ExternalResearch {
   query: string;
   summary: string;
   sources: ResearchSource[];
+  /** The report split into paragraphs, each carrying its own attribution. */
+  claims?: ResearchClaim[];
   at?: string | null;
 }
 
@@ -358,7 +367,7 @@ export interface ExportRecord {
   analysisId: string;
   analysisTitle: string;
   templateName: string;
-  format: "DOCX" | "PDF";
+  format: "DOCX" | "PDF" | "MD";
   size: number;
   destination: "download" | "onedrive" | "outlook";
   status: "ready" | "generating" | "failed";

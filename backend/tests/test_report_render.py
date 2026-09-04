@@ -63,6 +63,13 @@ def _analysis(**overrides):
             "detail": "",
             "query": "Current public procurement rules for NYC DOT",
             "summary": "City procurement follows the PPB Rules.",
+            "claims": [
+                {
+                    "text": "City procurement follows the PPB Rules.",
+                    "sources": ["https://www.nyc.gov/site/mocs/rules/ppb-rules.page"],
+                },
+                {"text": "Award timelines vary by agency.", "sources": []},
+            ],
             "sources": [
                 {
                     "url": "https://www.nyc.gov/site/mocs/rules/ppb-rules.page",
@@ -188,3 +195,25 @@ def test_markdown_links_every_source(tmp_path):
     text = open(path, encoding="utf-8").read()
     assert "## External research" in text
     assert "[Procurement Policy Board Rules](https://www.nyc.gov/site/mocs/rules/ppb-rules.page)" in text
+
+
+def test_each_paragraph_carries_the_source_that_backs_it(tmp_path):
+    """A reader checking one sentence should not have to guess which of a
+    dozen sources at the end of the section it came from."""
+    path = _render_to(tmp_path, _analysis())
+    text = "\n".join(p.text for p in docx.Document(path).paragraphs)
+    assert "City procurement follows the PPB Rules.\nSource: nyc.gov" in text
+
+
+def test_an_unattributed_paragraph_says_so_rather_than_borrowing_a_source(tmp_path):
+    path = _render_to(tmp_path, _analysis())
+    text = "\n".join(p.text for p in docx.Document(path).paragraphs)
+    assert "Award timelines vary by agency.\nNo source was cited for this paragraph" in text
+
+
+def test_markdown_attributes_each_paragraph_too(tmp_path):
+    report = SimpleNamespace(id="x_md3", template_name="Brief", format="MD")
+    path = render(str(tmp_path), report, _analysis(), [], [])
+    text = open(path, encoding="utf-8").read()
+    assert "*Source: [nyc.gov](https://www.nyc.gov/site/mocs/rules/ppb-rules.page)*" in text
+    assert "*No source was cited for this paragraph.*" in text

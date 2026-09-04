@@ -18,6 +18,12 @@ from app.schemas.resources import ReportGenerateRequest, ReportResponse
 
 router = APIRouter(tags=["reports"])
 
+MEDIA_TYPES = {
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "pdf": "application/pdf",
+    "md": "text/markdown; charset=utf-8",
+}
+
 
 def _to_response(r: Report) -> dict:
     return {
@@ -106,10 +112,14 @@ async def download_report(report_id: str, user: CurrentUser, db: DbSession):
             detail="The rendered file is no longer on disk. Generate the report again.",
         )
 
+    # The extension and type come from the file that was actually rendered.
+    # Serving a Markdown report as a .docx made the browser hand it to Word,
+    # which then refused to open it.
+    suffix = os.path.splitext(report.storage_path)[1].lstrip(".").lower() or "docx"
     return FileResponse(
         report.storage_path,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename=f"{report.analysis_title} - {report.template_name}.docx",
+        media_type=MEDIA_TYPES.get(suffix, "application/octet-stream"),
+        filename=f"{report.analysis_title} - {report.template_name}.{suffix}",
     )
 
 

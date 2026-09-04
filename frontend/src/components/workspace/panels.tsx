@@ -26,7 +26,7 @@ import { ComplianceMatrix } from "./compliance-matrix";
 import { useAnalysesStore, allFindings } from "@/stores/analyses";
 import { useQAStore } from "@/stores/qa";
 import { useReportsStore } from "@/stores/workspace";
-import type { Analysis, GoNoGo } from "@/types";
+import type { Analysis, GoNoGo, ResearchClaim, ResearchSource } from "@/types";
 
 /* ================================================================ */
 /* Go / No-Go                                                        */
@@ -693,6 +693,16 @@ export function ResearchPanel({ analysis }: { analysis: Analysis }) {
   // thing — nobody has searched the web for this — and neither should crash.
   const status = research?.status ?? "not_requested";
   const sources = research?.sources ?? [];
+  // An older pass stored only the prose. Falling back to paragraphs with no
+  // attribution is right: it is what we actually know about them.
+  const claims: ResearchClaim[] =
+    research?.claims?.length
+      ? research.claims
+      : (research?.summary ?? "")
+          .split(/\n{2,}/)
+          .map((text) => text.trim())
+          .filter(Boolean)
+          .map((text) => ({ text, sources: [] }));
 
   if (!research || status === "not_requested") {
     return (
@@ -709,8 +719,8 @@ export function ResearchPanel({ analysis }: { analysis: Analysis }) {
     <div className="space-y-5">
       <Callout tone="slate" title="Read on the open web, not in your document">
         Nothing on this tab is a clause in the solicitation. It is background on
-        the rules the solicitation sits inside, and every claim carries the page
-        it came from. Check it before you rely on it.
+        the rules the solicitation sits inside. Each paragraph shows the pages
+        that back it, or says plainly that nothing was cited for it.
       </Callout>
 
       {trouble ? (
@@ -736,7 +746,7 @@ export function ResearchPanel({ analysis }: { analysis: Analysis }) {
         </Panel>
       ) : null}
 
-      {research.summary ? (
+      {claims.length > 0 ? (
         <Panel>
           <PanelHeader
             title="What it found"
@@ -746,13 +756,10 @@ export function ResearchPanel({ analysis }: { analysis: Analysis }) {
               ) : null
             }
           />
-          <div className="space-y-3 px-5 pb-5 text-sm leading-relaxed text-ink-soft">
-            {research.summary
-              .split(/\n{2,}/)
-              .filter(Boolean)
-              .map((para, index) => (
-                <p key={index}>{para}</p>
-              ))}
+          <div className="space-y-5 px-5 pb-5">
+            {claims.map((claim, index) => (
+              <Claim key={index} claim={claim} sources={sources} />
+            ))}
           </div>
         </Panel>
       ) : null}
@@ -803,6 +810,55 @@ export function ResearchPanel({ analysis }: { analysis: Analysis }) {
           </motion.ul>
         )}
       </Panel>
+    </div>
+  );
+}
+
+/**
+ * One paragraph of the research report with the pages that back it.
+ *
+ * The attribution sits under the sentence it belongs to, not in a list at the
+ * end of the section, because the question a reader actually has is "says
+ * who?" about one specific line. A paragraph the search tool cited nothing for
+ * says so — borrowing the neighbouring paragraph's source would be the exact
+ * dishonesty this whole tab exists to prevent.
+ */
+function Claim({ claim, sources }: { claim: ResearchClaim; sources: ResearchSource[] }) {
+  const cited = claim.sources
+    .map((url) => sources.find((source) => source.url === url))
+    .filter((source): source is ResearchSource => Boolean(source));
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm leading-relaxed text-ink-soft">{claim.text}</p>
+      {cited.length > 0 ? (
+        <p className="flex flex-wrap items-center gap-1.5">
+          <span className="font-mono text-2xs uppercase tracking-[0.1em] text-ink-faint">
+            Source
+          </span>
+          {cited.map((source) => (
+            <a
+              key={source.url}
+              href={source.url}
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              title={source.title}
+              className={cn(
+                "inline-flex max-w-full items-center gap-1.5 rounded-md border border-line-strong",
+                "bg-paper-raised px-2 py-1 font-mono text-2xs text-ink-soft",
+                "transition-colors duration-150 hover:border-patina hover:bg-patina-tint hover:text-patina",
+              )}
+            >
+              <Globe className="size-3 shrink-0 opacity-70" aria-hidden />
+              <span className="truncate">{source.site || source.url}</span>
+            </a>
+          ))}
+        </p>
+      ) : (
+        <p className="font-mono text-2xs uppercase tracking-[0.1em] text-ink-faint">
+          No source cited — check before relying on it
+        </p>
+      )}
     </div>
   );
 }

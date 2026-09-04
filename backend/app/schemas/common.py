@@ -240,6 +240,19 @@ class ResearchSource(CamelModel):
     site: str = ""
 
 
+class ResearchClaim(CamelModel):
+    """One paragraph of the research report, with the pages that back it.
+
+    ``sources`` is empty when the search tool cited nothing for this
+    paragraph. That is shown as-is: an unattributed claim borrowing the
+    neighbouring paragraph's citation would be the same lie the whole
+    research tab exists to prevent.
+    """
+
+    text: str
+    sources: list[str] = []
+
+
 class ExternalResearch(CamelModel):
     """What the open web said, kept separate from what the document says.
 
@@ -254,6 +267,8 @@ class ExternalResearch(CamelModel):
     query: str = ""
     summary: str = ""
     sources: list[ResearchSource] = []
+    #: The report broken into paragraphs, each carrying the URLs that back it.
+    claims: list[ResearchClaim] = []
     at: str | None = None
 
 
