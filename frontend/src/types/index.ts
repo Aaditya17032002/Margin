@@ -466,6 +466,38 @@ export interface ResponseBinding {
   };
 }
 
+/**
+ * One thing in an analysis that a machine could not settle.
+ *
+ * Margin produces several kinds of doubt and they used to live wherever they
+ * were produced — an unlocated citation on a findings tab, an unreached page in
+ * the coverage ledger, an unsigned mandatory requirement in the response trace.
+ * A capture manager with four days left does not tour six tabs looking for
+ * them, so they are collected into one list ordered by what it costs to be
+ * wrong.
+ */
+export interface VerificationItem {
+  id: string;
+  kind: "coverage" | "ledger" | "amendment" | "gate" | "citation" | "requirement" | "response";
+  severity: "blocking" | "important" | "routine";
+  title: string;
+  /** Why a rule or a model could not settle it. */
+  why: string;
+  /** What happens if nobody does anything. */
+  consequence: string;
+  /** Which workspace tab settles it. */
+  tab: string;
+  reference: string;
+  citation?: Citation | null;
+  owner?: string | null;
+  detail: string;
+}
+
+export interface VerificationQueue {
+  summary: { total: number; blocking: number; important: number; routine: number };
+  items: VerificationItem[];
+}
+
 export interface QAQuestion {
   id: string;
   analysisId: string;

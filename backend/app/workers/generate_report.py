@@ -95,7 +95,10 @@ async def generate_report_task(ctx: dict, report_id: str) -> dict:
                 analysis_id=analysis.id,
                 format=report.format,
             )
-            filepath = render(settings.REPORTS_DIR, report, analysis, rows, questions)
+            blocks = None
+            if EVIDENCE_PACK in (report.template_name or "").lower():
+                blocks = await _evidence_blocks(db, analysis, rows)
+            filepath = render(settings.REPORTS_DIR, report, analysis, rows, questions, blocks)
 
             report.status = "ready"
             report.storage_path = filepath
@@ -118,10 +121,45 @@ async def generate_report_task(ctx: dict, report_id: str) -> dict:
             return await _fail(db, report, str(exc)[:300])
 
 
+
+async def _evidence_blocks(db, analysis: Analysis, rows: list[Requirement]) -> list:
+    """Assemble the evidence pack from what is stored.
+
+    The verification queue is rebuilt here rather than read from a table on
+    purpose: it is derived from the current state of everything else, and a
+    stored copy would be a second version of the truth that quietly drifts.
+    """
+    from app.db.models.response_check import ResponseCheck
+    from app.pipeline import verification
+    from app.reports import evidence
+
+    version = int((analysis.response or {}).get("version") or 0)
+    checks: list = []
+    if version:
+        checks = list(
+            (
+                await db.execute(
+                    select(ResponseCheck).where(
+                        ResponseCheck.analysis_id == analysis.id,
+                        ResponseCheck.response_version == version,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    queue = verification.build(analysis=analysis, requirements=list(rows), checks=checks)
+    return evidence.build(analysis=analysis, requirements=list(rows), checks=checks, queue=queue)
+
+
 async def _fail(db, report: Report, reason: str) -> dict:
     report.status = "failed"
     await db.commit()
     return {"error": reason}
+
+
+#: The template name that produces the evidence pack rather than a briefing.
+EVIDENCE_PACK = "evidence pack"
 
 
 def render(
@@ -130,14 +168,25 @@ def render(
     analysis: Analysis,
     rows: list[Requirement],
     questions: list[Question],
+    blocks: list | None = None,
 ) -> str:
     """Render in the format that was asked for.
 
     Naming a DOCX ``.pdf`` is worse than not offering PDF: the file opens in
     nothing and the user has no idea why. So PDF is a real conversion or a real
     failure, never a rename.
+
+    ``blocks`` carries the evidence pack when one was requested. It is passed
+    in rather than assembled here so both formats render the same record — a
+    pack that differed between DOCX and Markdown would be two records.
     """
     fmt = (report.format or "DOCX").upper()
+    if blocks is not None:
+        if fmt == "MD":
+            return _blocks_markdown(reports_dir, report, blocks)
+        docx_path = _blocks_docx(reports_dir, report, blocks)
+        return docx_path if fmt != "PDF" else _to_pdf(docx_path)
+
     if fmt == "MD":
         return _render_markdown(reports_dir, report, analysis, rows, questions)
 
@@ -145,6 +194,74 @@ def render(
     if fmt != "PDF":
         return docx_path
     return _to_pdf(docx_path)
+
+
+
+# ── Evidence pack ────────────────────────────────────────────────────────
+#
+# The pack arrives as blocks — headings, paragraphs, notes and tables — so the
+# two formats walk identical content. Anything a renderer decided for itself
+# would be a difference between two copies of the same record.
+
+
+def _blocks_docx(reports_dir: str, report: Report, blocks: list) -> str:
+    from docx import Document as DocxDocument
+    from docx.shared import Pt
+
+    doc = DocxDocument()
+    for block in blocks:
+        kind = block[0]
+        if kind == "heading":
+            doc.add_heading(str(block[2]), level=int(block[1]))
+        elif kind == "para":
+            doc.add_paragraph(str(block[1]))
+        elif kind == "note":
+            paragraph = doc.add_paragraph(str(block[1]))
+            paragraph.runs[0].font.size = Pt(8)
+            paragraph.runs[0].italic = True
+        elif kind == "table":
+            headers, rows = block[1], block[2]
+            table = doc.add_table(rows=1, cols=len(headers))
+            table.style = "Light Grid Accent 1"
+            for index, name in enumerate(headers):
+                table.rows[0].cells[index].text = str(name)
+            for row in rows:
+                cells = table.add_row().cells
+                for index, value in enumerate(row[: len(headers)]):
+                    cells[index].text = str(value)
+            doc.add_paragraph()
+
+    os.makedirs(reports_dir, exist_ok=True)
+    filepath = os.path.join(reports_dir, f"{report.id}.docx")
+    doc.save(filepath)
+    return filepath
+
+
+def _blocks_markdown(reports_dir: str, report: Report, blocks: list) -> str:
+    out: list[str] = []
+    for block in blocks:
+        kind = block[0]
+        if kind == "heading":
+            out += ["", f"{'#' * int(block[1])} {block[2]}", ""]
+        elif kind == "para":
+            out += [str(block[1]), ""]
+        elif kind == "note":
+            out += [f"*{block[1]}*", ""]
+        elif kind == "table":
+            headers, rows = block[1], block[2]
+            out.append("| " + " | ".join(str(h) for h in headers) + " |")
+            out.append("| " + " | ".join("---" for _ in headers) + " |")
+            for row in rows:
+                cells = [str(value).replace("|", "\\|").replace("\n", " ") for value in row[: len(headers)]]
+                cells += [""] * (len(headers) - len(cells))
+                out.append("| " + " | ".join(cells) + " |")
+            out.append("")
+
+    os.makedirs(reports_dir, exist_ok=True)
+    filepath = os.path.join(reports_dir, f"{report.id}.md")
+    with open(filepath, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(out).strip() + "\n")
+    return filepath
 
 
 def _render_docx(

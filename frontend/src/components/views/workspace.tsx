@@ -30,6 +30,7 @@ import { DeadlineLine } from "@/components/domain/deadline";
 import { WORKSPACE_TABS, type WorkspaceTabId } from "@/components/workspace/tabs";
 import { CoveragePanel } from "@/components/workspace/coverage";
 import { ResponseGapPanel } from "@/components/workspace/response-gap";
+import { VerificationPanel } from "@/components/workspace/verification";
 import {
   AmendmentsPanel,
   ComplianceMatrix,
@@ -126,6 +127,14 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
 
   // A gap in the reading is the one thing on this rail that invalidates
   // everything else, so it is counted the same way a failed hard gate is.
+  // Derived from what the workspace already has, so the rail does not need a
+  // second request to know whether anything is blocking.
+  const verificationBlocking =
+    (analysis.response?.summary?.blocking ?? 0) +
+    (analysis.ledger?.invalidated?.length ?? 0) +
+    (analysis.coverage?.totals.emptyDocuments ?? 0) +
+    (analysis.gates ?? []).filter((g) => g.weight === "hard" && !g.answer).length;
+
   const coverageGaps =
     (analysis.coverage?.totals.chunksUnreached ?? 0) +
     (analysis.coverage?.totals.emptyDocuments ?? 0);
@@ -134,6 +143,9 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
     "go-no-go": health.hardGatesFailed
       ? { value: health.hardGatesFailed, tone: "seal" }
       : undefined,
+    // The queue's blocking count is the one number on this rail that means
+    // "stop what you are doing". Everything else is a category of work.
+    verify: verificationBlocking ? { value: verificationBlocking, tone: "seal" } : undefined,
     coverage: coverageGaps ? { value: coverageGaps, tone: "ochre" } : undefined,
     // Mandatory requirements the draft does not answer. Nothing else on
     // the rail outranks it once a response is bound.
@@ -356,6 +368,9 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
               >
                 {tab === "go-no-go" ? <GoNoGoPanel analysis={analysis} /> : null}
                 {tab === "overview" ? <OverviewPanel analysis={analysis} /> : null}
+                {tab === "verify" ? (
+                  <VerificationPanel analysis={analysis} onOpenTab={(next) => setTab(next as WorkspaceTabId)} />
+                ) : null}
                 {tab === "coverage" ? <CoveragePanel analysis={analysis} /> : null}
                 {tab === "response" ? <ResponseGapPanel analysis={analysis} /> : null}
                 {tab === "scope" ? (

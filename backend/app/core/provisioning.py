@@ -76,6 +76,26 @@ TEMPLATE_DEFAULTS: list[dict] = [
         ],
         "format": "DOCX",
     },
+    {
+        # Not a briefing. This is the record somebody asks for afterwards — in a
+        # debrief, a protest, a handover, or an internal review — when the
+        # question is no longer "what does it say?" but "on what basis did you
+        # conclude that?". Its name is matched by the renderer, so it is not
+        # free text.
+        "name": "Evidence pack",
+        "kind": "report",
+        "description": "What was read, what was decided, on what evidence, and who signed it — including the pages nothing reached and the claims that could not be grounded.",
+        "sections": [
+            "What was read",
+            "Amendments",
+            "Requirements and how they were found",
+            "The response, requirement by requirement",
+            "Who signed what",
+            "What is still open",
+            "Claims that could not be grounded",
+        ],
+        "format": "DOCX",
+    },
 ]
 
 

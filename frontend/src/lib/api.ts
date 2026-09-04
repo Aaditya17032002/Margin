@@ -30,6 +30,7 @@ import type {
   SessionUser,
   Template,
   TeamMember,
+  VerificationQueue,
 } from "@/types";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
@@ -296,6 +297,19 @@ export const responseApi = {
       method: "PATCH",
       body: patch,
     }),
+};
+
+/* ------------------------------------------------------------------ */
+/* Verification queue                                                   */
+/* ------------------------------------------------------------------ */
+
+export const verificationApi = {
+  /**
+   * Everything in this analysis that needs a person. Derived on read, so an
+   * item disappears the moment the thing it was about is settled.
+   */
+  queue: (analysisId: string) =>
+    api<VerificationQueue>(`/api/v1/analyses/${analysisId}/verification`),
 };
 
 /* ------------------------------------------------------------------ */

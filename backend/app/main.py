@@ -100,6 +100,7 @@ def create_app() -> FastAPI:
         deadlines,
         activity,
         search,
+        verification,
     )
 
     prefix = settings.API_V1_PREFIX
@@ -122,6 +123,7 @@ def create_app() -> FastAPI:
     app.include_router(deadlines.router, prefix=prefix)
     app.include_router(activity.router, prefix=prefix)
     app.include_router(search.router, prefix=prefix)
+    app.include_router(verification.router, prefix=prefix)
 
     # ── Health / Ready / Metrics ─────────────────────────────────────────
 
