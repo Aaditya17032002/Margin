@@ -24,6 +24,8 @@ import type {
   MatrixStatus,
   Org,
   PastBid,
+  PastPerformanceMatch,
+  ContentSuggestion,
   Prefs,
   QAQuestion,
   ResponseCheck,
@@ -456,6 +458,31 @@ export const reviewsApi = {
 /* ------------------------------------------------------------------ */
 /* Verification queue                                                   */
 /* ------------------------------------------------------------------ */
+
+export const memoryApi = {
+  /**
+   * Which of our contracts is relevant to this requirement, and why. Every
+   * signal comes back separately so a proposal can make the case rather than
+   * assert a number.
+   */
+  pastPerformance: (analysisId: string, requirementId: string) =>
+    api<PastPerformanceMatch[]>(
+      `/api/v1/analyses/${analysisId}/requirements/${requirementId}/past-performance`,
+    ),
+
+  /**
+   * Text that answered something like this before, with what happened to it.
+   * Retired blocks are never returned.
+   */
+  content: (analysisId: string, requirementId: string) =>
+    api<ContentSuggestion[]>(
+      `/api/v1/analyses/${analysisId}/requirements/${requirementId}/content`,
+    ),
+
+  /** Records that a block went into a response. */
+  useBlock: (blockId: string) =>
+    api<unknown>(`/api/v1/content-blocks/${blockId}`, { method: "PATCH", body: { used: true } }),
+};
 
 export const weightingApi = {
   /**

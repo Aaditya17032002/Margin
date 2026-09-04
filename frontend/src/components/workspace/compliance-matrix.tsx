@@ -38,6 +38,7 @@ import {
   RequirementTypeBadge,
   StakesBadge,
 } from "@/components/domain/primitives";
+import { RequirementMemory } from "@/components/workspace/memory";
 import { useMatrixStore } from "@/stores/matrix";
 import { useTeamStore } from "@/stores/workspace";
 import type { MatrixRow, MatrixStatus, RequirementType } from "@/types";
@@ -156,6 +157,7 @@ export function ComplianceMatrix({
               clamp={2}
             />
             <Provenance row={row.original} />
+            {analysisId ? <RequirementMemory analysisId={analysisId} row={row.original} /> : null}
           </div>
         ),
       },
@@ -283,7 +285,7 @@ export function ComplianceMatrix({
     }
 
     return base;
-  }, [analysisTitles, deleteRow, owners, restoreRow, showAnalysisColumn, updateRow]);
+  }, [analysisId, analysisTitles, deleteRow, owners, restoreRow, showAnalysisColumn, updateRow]);
 
   const table = useReactTable({
     data: filtered,

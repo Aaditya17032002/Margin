@@ -97,6 +97,7 @@ def create_app() -> FastAPI:
         integrations,
         templates,
         knowledge,
+        memory,
         preferences,
         reports,
         deadlines,
@@ -124,6 +125,7 @@ def create_app() -> FastAPI:
     app.include_router(integrations.router, prefix=prefix)
     app.include_router(templates.router, prefix=prefix)
     app.include_router(knowledge.router, prefix=prefix)
+    app.include_router(memory.router, prefix=prefix)
     app.include_router(preferences.router, prefix=prefix)
     app.include_router(reports.router, prefix=prefix)
     app.include_router(deadlines.router, prefix=prefix)

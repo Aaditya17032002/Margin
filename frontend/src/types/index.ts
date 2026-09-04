@@ -742,6 +742,69 @@ export interface WeightingLens {
   factors: FactorCoverage[];
 }
 
+/**
+ * A contract the organisation has delivered, and how relevant it is here.
+ *
+ * Every signal is reported separately. "This one matches" is an assertion;
+ * "same agency, same NAICS, ended eight months ago" is a case somebody can
+ * make in a proposal.
+ */
+export interface PastPerformanceRecord {
+  id: string;
+  title: string;
+  customer: string;
+  agency: string;
+  contractNumber: string;
+  scope: string;
+  value: number;
+  startedAt: string | null;
+  endedAt: string | null;
+  ongoing: boolean;
+  naics: string;
+  capabilities: string[];
+  placeOfPerformance: string;
+  reference: {
+    name: string;
+    title: string;
+    email: string;
+    phone: string;
+    /** A reference who has moved on fails at the worst possible time. */
+    checkedAt: string | null;
+  };
+  rating: string;
+  notes: string;
+}
+
+export interface PastPerformanceMatch {
+  recordId: string;
+  title: string;
+  score: number;
+  signals: Record<string, { score: number; detail?: string; shared?: string[] }>;
+  /** Reasons to think twice before putting this one forward. */
+  concerns: string[];
+  record: PastPerformanceRecord;
+}
+
+/**
+ * A passage that answered a requirement on a previous bid.
+ *
+ * Never offered as text alone: the provenance and the cautions are what make
+ * it a library rather than a pile of paragraphs.
+ */
+export interface ContentSuggestion {
+  blockId: string;
+  title: string;
+  text: string;
+  score: number;
+  /** Where it came from, what happened to that bid, and who verified it. */
+  provenance: string;
+  /** Reasons to read it before using it. */
+  cautions: string[];
+  outcome: "won" | "lost" | "no_award" | "withdrawn" | "unknown";
+  verifiedBy: string | null;
+  timesUsed: number;
+}
+
 export interface QAQuestion {
   id: string;
   analysisId: string;

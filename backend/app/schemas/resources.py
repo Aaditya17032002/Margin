@@ -3,6 +3,7 @@ templates, knowledge, reports, activity, preferences, deadlines, search."""
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
 from pydantic import Field
@@ -86,6 +87,90 @@ class MatrixRowResponse(CamelModel):
     due_at: str | None = Field(None, alias="dueAt")
     #: Append-only: {at, event, detail}.
     history: list[dict] = []
+
+
+# ── Institutional memory ─────────────────────────────────────────────────
+
+class _Columns(CamelModel):
+    """Shared conversion for records that map straight onto columns."""
+
+    def to_columns(self, *, partial: bool = False) -> dict:
+        data = self.model_dump(exclude_unset=partial, by_alias=False)
+        data.pop("reference", None)
+        return {key: value for key, value in data.items() if value is not None or not partial}
+
+
+class PastPerformanceCreate(_Columns):
+    """A contract the organisation has delivered.
+
+    `capabilities` is free tags rather than a taxonomy: every organisation's
+    vocabulary is its own, and a fixed list gets filled in wrongly or not at
+    all.
+    """
+
+    title: str
+    customer: str = ""
+    agency: str = ""
+    contract_number: str = Field("", alias="contractNumber")
+    scope: str = ""
+    value: float = 0
+    started_at: date | None = Field(None, alias="startedAt")
+    ended_at: date | None = Field(None, alias="endedAt")
+    ongoing: bool = False
+    naics: str = ""
+    capabilities: list[str] = []
+    place_of_performance: str = Field("", alias="placeOfPerformance")
+    reference_name: str = Field("", alias="referenceName")
+    reference_title: str = Field("", alias="referenceTitle")
+    reference_email: str = Field("", alias="referenceEmail")
+    reference_phone: str = Field("", alias="referencePhone")
+    #: When somebody last confirmed the reference is still willing. A stale
+    #: reference is worse than none: it fails at the worst possible time.
+    reference_checked_at: date | None = Field(None, alias="referenceCheckedAt")
+    rating: str = ""
+    notes: str = ""
+
+
+class PastPerformanceUpdate(PastPerformanceCreate):
+    title: str = ""
+
+
+class ContentBlockCreate(_Columns):
+    """A passage that answered a requirement on a previous bid.
+
+    The provenance fields are not optional decoration. "This paragraph answered
+    L.4.2 on the FNS award and Dana signed it off" and "here is some old text
+    about quality control" are completely different things to hand somebody at
+    2am.
+    """
+
+    title: str = ""
+    text: str
+    #: So a page-limit block is never offered for a narrative requirement.
+    requirement_kind: str = Field("obligation", alias="requirementKind")
+    tags: list[str] = []
+    source_analysis_id: str | None = Field(None, alias="sourceAnalysisId")
+    source_solicitation: str = Field("", alias="sourceSolicitation")
+    source_agency: str = Field("", alias="sourceAgency")
+    source_reference: str = Field("", alias="sourceReference")
+    source_requirement: str = Field("", alias="sourceRequirement")
+    outcome: Literal["won", "lost", "no_award", "withdrawn", "unknown"] = "unknown"
+    last_verdict: str = Field("", alias="lastVerdict")
+    verified_by: str | None = Field(None, alias="verifiedBy")
+
+
+class ContentBlockUpdate(CamelModel):
+    title: str | None = None
+    text: str | None = None
+    requirement_kind: str | None = Field(None, alias="requirementKind")
+    tags: list[str] | None = None
+    outcome: Literal["won", "lost", "no_award", "withdrawn", "unknown"] | None = None
+    #: Records that this block went into a response.
+    used: bool | None = None
+    #: Retire rather than delete: a proposal that used it still has to be
+    #: explainable, and "we removed it" is not an explanation.
+    retire: bool | None = None
+    retired_reason: str | None = Field(None, alias="retiredReason")
 
 
 # ── Contradictions ───────────────────────────────────────────────────────
