@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 
 import { SettingsView } from "@/components/views/settings";
 import { SkeletonPanel } from "@/components/ui/feedback";
+import { ScrollPage } from "@/components/ui/page";
 
 export const metadata: Metadata = {
   title: "Settings",
@@ -11,8 +12,10 @@ export const metadata: Metadata = {
 
 export default function SettingsPage() {
   return (
-    <Suspense fallback={<SkeletonPanel className="mx-auto max-w-[72rem]" />}>
-      <SettingsView />
-    </Suspense>
+    <ScrollPage>
+      <Suspense fallback={<SkeletonPanel className="mx-auto max-w-[72rem]" />}>
+        <SettingsView />
+      </Suspense>
+    </ScrollPage>
   );
 }

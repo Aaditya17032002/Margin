@@ -59,23 +59,29 @@ export function GoNoGoPanel({ analysis }: { analysis: Analysis }) {
     setConfirming(null);
   }
 
-  return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_1.15fr]">
-      <div className="space-y-6">
-        <Panel className="px-6 py-7">
-          <div className="flex justify-center">
-            <GoNoGoGauge gates={analysis.gates} decision={analysis.goNoGo} size="lg" />
-          </div>
-        </Panel>
+  const hardGates = analysis.gates.filter((g) => g.weight === "hard").length;
 
-        <Panel>
-          <PanelHeader title="Record the decision" description="Reversible, and always attributed." />
-          <div className="space-y-4 px-5 py-5">
+  return (
+    <div className="space-y-6">
+      {/* The decision reads as one object: the standing, the reason, and the
+          three buttons that settle it. Splitting them across two panels made
+          the gauge look like an ornament. */}
+      <Panel>
+        <div className="flex flex-col gap-6 px-6 py-6 @lg:flex-row @lg:items-center @lg:gap-8">
+          <div className="w-full max-w-[13rem] shrink-0 self-center">
+            <GoNoGoGauge gates={analysis.gates} decision={analysis.goNoGo} size="md" />
+          </div>
+          <div className="min-w-0 flex-1 space-y-4">
+            <div>
+              <h3 className="text-lg leading-snug text-ink">Record the decision</h3>
+              <p className="text-sm text-ink-soft">Reversible, and always attributed.</p>
+            </div>
             <Textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Why this way? One sentence is enough — it is what the next person reads."
               aria-label="Decision note"
+              rows={2}
             />
             <div className="flex flex-wrap gap-2">
               <Button
@@ -109,12 +115,15 @@ export function GoNoGoPanel({ analysis }: { analysis: Analysis }) {
               </Well>
             ) : null}
           </div>
-        </Panel>
-      </div>
+        </div>
+      </Panel>
 
       <div className="space-y-6">
         <Panel>
-          <PanelHeader title="The four gates" description="Each one answered from the document, not from memory." />
+          <PanelHeader
+            title={hardGates ? `${pluralize(hardGates, "hard gate")}` : "Eligibility gates"}
+            description="Each one answered from the document, not from memory."
+          />
           <motion.ul
             variants={staggerList()}
             initial={reduce ? false : "hidden"}
@@ -240,7 +249,7 @@ export function OverviewPanel({ analysis }: { analysis: Analysis }) {
         </Panel>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+      <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <Panel>
           <PanelHeader title="Identity" description="Who is buying, under what instrument, on what terms." />
           <div className="px-5 pb-2">
@@ -777,7 +786,7 @@ export function VersionsPanel({ analysis }: { analysis: Analysis }) {
   const activity = allActivity.filter((a) => a.analysisId === analysis.id);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid gap-6 @3xl:grid-cols-2">
       <Panel>
         <PanelHeader title="Version history" description="Every pass Margin made, and every human who changed it." />
         {analysis.versions.length === 0 ? (

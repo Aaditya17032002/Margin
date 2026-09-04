@@ -171,6 +171,16 @@
   --text-6xl: 4.25rem;
   --text-6xl--line-height: 1;
 
+  /* Marketing display sizes. The app's scale is fixed because a dense table
+     has to stay legible at any width; a landing page is the opposite problem,
+     so these interpolate with the viewport and only bottom out on a phone. */
+  --text-hero: clamp(2.75rem, 1.6rem + 5.1vw, 5.75rem);
+  --text-hero--line-height: 0.98;
+  --text-section: clamp(2rem, 1.35rem + 2.6vw, 3.5rem);
+  --text-section--line-height: 1.08;
+  --text-lead: clamp(1.0625rem, 0.98rem + 0.42vw, 1.375rem);
+  --text-lead--line-height: 1.55;
+
   --radius-xs: 3px;
   --radius-sm: 5px;
   --radius-md: 7px;
@@ -190,6 +200,8 @@
   --animate-fade: fade 180ms var(--ease-editorial) both;
   --animate-shimmer: shimmer 1.6s var(--ease-editorial) infinite;
   --animate-ticker: ticker 240ms var(--ease-editorial) both;
+  --animate-breathe: breathe 2.4s var(--ease-editorial) infinite;
+  --animate-sweep: sweep 1.9s var(--ease-editorial) infinite;
 }
 
 @keyframes rise {
@@ -221,6 +233,40 @@
   }
 }
 
+@keyframes scroll-fade-top {
+  from {
+    mask-image: linear-gradient(to bottom, #000 0, #000 100%);
+  }
+  to {
+    mask-image: linear-gradient(to bottom, transparent 0, #000 2.5rem, #000 100%);
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(320%);
+  }
+}
+
+@keyframes trace {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
 @keyframes ticker {
   from {
     opacity: 0;
@@ -242,10 +288,19 @@
     scrollbar-gutter: stable;
   }
 
+  /* Inside the application shell the window never scrolls — each region owns
+     its own overflow. Marketing pages keep the document scroll. */
+  html[data-shell="app"],
+  html[data-shell="app"] body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   body {
     background-color: var(--paper);
     color: var(--ink);
-    font-family: var(--font-sans);
+    font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
     font-size: var(--text-base);
     line-height: 1.6;
     font-feature-settings: "cv01", "cv03", "ss03";
@@ -273,7 +328,10 @@
   h2,
   h3,
   h4 {
-    font-family: var(--font-display);
+    /* Named directly rather than through --font-display: `@theme inline` folds
+       its values into the utilities it generates and never emits the variable
+       itself, so `var(--font-display)` resolves to nothing here. */
+    font-family: var(--font-fraunces), "Iowan Old Style", Georgia, serif;
     font-weight: 500;
     letter-spacing: -0.014em;
     font-variation-settings: "SOFT" 12, "WONK" 0;
@@ -403,6 +461,46 @@
   }
   .scrollbar-none::-webkit-scrollbar {
     display: none;
+  }
+
+  /* --------------------------------------------------------------------
+     Scroll regions.
+
+     The workspace is a fixed viewport: the window itself never scrolls, and
+     each region owns its own overflow. Scrolling a table of 200 requirements
+     should not move the header that says which analysis you are looking at.
+     -------------------------------------------------------------------- */
+  .scroll-region {
+    /* A scroll container only clips descendants whose containing block is
+       inside it. Absolutely positioned children — visually-hidden labels,
+       tooltips, focus rings — otherwise escape and widen the page. */
+    position: relative;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* Keeps a sticky header inside the region from butting against the top
+       edge of the content it pins above. */
+    scroll-padding-block-start: 1rem;
+  }
+
+  .scroll-region-x {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  /* A fade at the top and bottom edge, so a cut-off row reads as "there is
+     more" rather than as a layout mistake. The mask only appears once the
+     region is actually scrolled away from that edge, which `animation-timeline`
+     resolves without a scroll listener. */
+  @supports (animation-timeline: scroll()) {
+    .scroll-fade {
+      animation: scroll-fade-top linear both;
+      animation-timeline: scroll(self block);
+      animation-range: 0 3rem;
+    }
+  }
+
+  .rail-shadow {
+    box-shadow: -1px 0 0 var(--line);
   }
 }
 

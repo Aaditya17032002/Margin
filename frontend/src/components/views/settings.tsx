@@ -76,7 +76,7 @@ export function SettingsView() {
         description="Account, organisation, and the defaults every new analysis inherits."
       />
 
-      <div className="grid gap-6 lg:grid-cols-[13.5rem_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[13.5rem_minmax(0,1fr)]">
         <nav aria-label="Settings sections" className="lg:sticky lg:top-20 lg:self-start">
           <ul className="scrollbar-none flex gap-1 overflow-x-auto border-b border-line pb-1 lg:block lg:space-y-0.5 lg:border-b-0 lg:pb-0">
             {TABS.map((item) => (

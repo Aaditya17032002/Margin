@@ -124,7 +124,7 @@ export function DeadlinesView() {
         </Well>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[20rem_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
         <div className="space-y-4 lg:sticky lg:top-20 lg:self-start">
           <Panel className="p-4">
             <Calendar

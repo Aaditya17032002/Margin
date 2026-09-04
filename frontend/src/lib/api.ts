@@ -487,29 +487,32 @@ export function streamEvents(
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
 
-        // SSE frames are separated by a blank line; a frame may span reads.
-        let split = buffer.indexOf("\n\n");
-        while (split !== -1) {
-          const frame = buffer.slice(0, split);
-          buffer = buffer.slice(split + 2);
+        // A frame ends at a blank line, and the spec allows CRLF, LF or CR as
+        // the line break — sse-starlette sends CRLF, so matching only "\n\n"
+        // finds no boundary at all and the stream goes silent.
+        for (;;) {
+          const boundary = buffer.search(/\r\n\r\n|\n\n|\r\r/);
+          if (boundary === -1) break;
+          const frame = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + (buffer[boundary] === "\r" && buffer[boundary + 1] === "\n" ? 4 : 2));
+
           const data = frame
-            .split("\n")
+            .split(/\r\n|\n|\r/)
             .filter((line) => line.startsWith("data:"))
             .map((line) => line.slice(5).trim())
             .join("");
-          if (data) {
-            try {
-              const parsed = JSON.parse(data) as RunEvent;
-              if (options.readyEvent && parsed.event === options.readyEvent) {
-                markReady();
-              } else {
-                onEvent(parsed);
-              }
-            } catch {
-              // Keep-alives and comments are not JSON; ignoring them is correct.
+          if (!data) continue;
+
+          try {
+            const parsed = JSON.parse(data) as RunEvent;
+            if (options.readyEvent && parsed.event === options.readyEvent) {
+              markReady();
+            } else {
+              onEvent(parsed);
             }
+          } catch {
+            // Keep-alives and comments are not JSON; ignoring them is correct.
           }
-          split = buffer.indexOf("\n\n");
         }
       }
     } catch (error) {

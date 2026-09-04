@@ -8,5 +8,7 @@ export const metadata: Metadata = {
 };
 
 export default function MatrixPage() {
-  return <MatrixView />;
+  return (
+    <MatrixView />
+  );
 }

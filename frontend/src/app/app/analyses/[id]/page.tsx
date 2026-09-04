@@ -22,7 +22,7 @@ function WorkspaceSkeleton() {
   return (
     <div className="mx-auto max-w-[76rem] space-y-6">
       <SkeletonPanel />
-      <div className="grid gap-6 lg:grid-cols-[13.5rem_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[13.5rem_minmax(0,1fr)]">
         <SkeletonPanel />
         <SkeletonPanel />
       </div>

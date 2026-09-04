@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { TeamView } from "@/components/views/team";
+import { ScrollPage } from "@/components/ui/page";
 
 export const metadata: Metadata = {
   title: "Team",
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function TeamPage() {
-  return <TeamView />;
+  return (
+    <ScrollPage>
+      <TeamView />
+    </ScrollPage>
+  );
 }

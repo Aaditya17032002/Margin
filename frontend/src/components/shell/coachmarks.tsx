@@ -42,21 +42,25 @@ export function Coachmarks() {
   const dismissed = usePrefsStore((s) => s.coachDismissed);
   const dismissCoach = usePrefsStore((s) => s.dismissCoach);
   const [step, setStep] = React.useState(0);
-  const [ready, setReady] = React.useState(false);
+  // The note waits a beat before appearing so it reads as an aside rather than
+  // as something the page threw at you. The timer is the only state the effect
+  // sets — resetting on the way out is done by rendering nothing and letting
+  // the timer be cleared, which avoids a synchronous setState in the body.
+  const [armedFor, setArmedFor] = React.useState<string | null>(null);
 
   const eligible = hydrated && onboarded && !dismissed && pathname === "/app";
+  const ready = eligible && armedFor === pathname;
 
   React.useEffect(() => {
-    if (!eligible) {
-      setReady(false);
+    if (!eligible) return;
+    const id = window.setTimeout(() => {
+      setArmedFor(pathname);
       setStep(0);
-      return;
-    }
-    const id = window.setTimeout(() => setReady(true), reduce ? 0 : 720);
+    }, reduce ? 0 : 720);
     return () => window.clearTimeout(id);
-  }, [eligible, reduce]);
+  }, [eligible, reduce, pathname]);
 
-  if (!eligible || !ready) return null;
+  if (!ready) return null;
 
   const current = STEPS[step];
   const last = step === STEPS.length - 1;

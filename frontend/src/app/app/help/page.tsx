@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { HelpView } from "@/components/views/help";
+import { ScrollPage } from "@/components/ui/page";
 
 export const metadata: Metadata = {
   title: "Help & shortcuts",
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function HelpPage() {
-  return <HelpView />;
+  return (
+    <ScrollPage>
+      <HelpView />
+    </ScrollPage>
+  );
 }

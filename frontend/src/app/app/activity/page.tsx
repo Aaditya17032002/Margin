@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { ActivityView } from "@/components/views/activity";
+import { ScrollPage } from "@/components/ui/page";
 
 export const metadata: Metadata = {
   title: "Activity",
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function ActivityPage() {
-  return <ActivityView />;
+  return (
+    <ScrollPage>
+      <ActivityView />
+    </ScrollPage>
+  );
 }

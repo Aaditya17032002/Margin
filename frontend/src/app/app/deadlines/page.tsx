@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { DeadlinesView } from "@/components/views/deadlines";
+import { ScrollPage } from "@/components/ui/page";
 
 export const metadata: Metadata = {
   title: "Deadlines",
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function DeadlinesPage() {
-  return <DeadlinesView />;
+  return (
+    <ScrollPage>
+      <DeadlinesView />
+    </ScrollPage>
+  );
 }

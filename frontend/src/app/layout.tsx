@@ -59,8 +59,16 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-appearance="paper" suppressHydrationWarning>
-      <body className={`${fraunces.variable} ${geist.variable} ${geistMono.variable} antialiased`}>
+    // The font variables belong on <html>, not <body>: `@layer base` rules and
+    // anything reading them from `:root` resolve against the document element,
+    // and a variable defined one level lower is invalid at that point.
+    <html
+      lang="en"
+      data-appearance="paper"
+      className={`${fraunces.variable} ${geist.variable} ${geistMono.variable}`}
+      suppressHydrationWarning
+    >
+      <body className="antialiased">
         <a
           href="#main"
           className="sr-only z-100 focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:rounded-md focus:border focus:border-line-strong focus:bg-paper-raised focus:px-4 focus:py-2 focus:text-sm focus:text-ink focus:shadow-[var(--shadow-float)]"

@@ -34,10 +34,10 @@ import { relative } from "@/lib/dates";
 import { analysisHealth, nextDeadlineFor } from "@/lib/derive";
 import { listItem, staggerList } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
-import { PageHeader } from "@/components/ui/surface";
 import { SearchField } from "@/components/ui/input";
 import { Segmented, Checkbox } from "@/components/ui/controls";
 import { EmptyState } from "@/components/ui/feedback";
+import { Page, PageBar } from "@/components/ui/page";
 import { Table, TableFrame, Td, Th, Tr } from "@/components/ui/table";
 import {
   ConfirmDialog,
@@ -143,8 +143,8 @@ export function AnalysesBoardView() {
   }
 
   return (
-    <div className="mx-auto max-w-[86rem] space-y-6">
-      <PageHeader
+    <Page>
+      <PageBar
         eyebrow="Pipeline"
         title="Analyses"
         description="Every solicitation Margin has read, arranged by how far along the decision is."
@@ -162,10 +162,9 @@ export function AnalysesBoardView() {
             </Button>
           </>
         }
-      />
-
-      <div className="flex flex-wrap items-center gap-3">
-        <SearchField
+        below={
+          <div className="flex flex-wrap items-center gap-3">
+            <SearchField
           value={query}
           onValueChange={setQuery}
           placeholder="Search by title, agency, number, owner"
@@ -209,18 +208,21 @@ export function AnalysesBoardView() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Segmented
-          ariaLabel="View"
-          value={view}
-          onValueChange={(v) => setView(v as "kanban" | "table")}
-          options={[
-            { value: "kanban", label: "Board", icon: <LayoutGrid /> },
-            { value: "table", label: "Table", icon: <Rows3 /> },
-          ]}
-        />
-      </div>
+            <Segmented
+              ariaLabel="View"
+              value={view}
+              onValueChange={(v) => setView(v as "kanban" | "table")}
+              options={[
+                { value: "kanban", label: "Board", icon: <LayoutGrid /> },
+                { value: "table", label: "Table", icon: <Rows3 /> },
+              ]}
+            />
+          </div>
+        }
+      />
 
-      <AnimatePresence>
+      <div className="flex min-h-0 flex-col px-6 pb-6 pt-5 lg:px-10">
+        <AnimatePresence>
         {selected.length > 0 ? (
           <motion.div
             initial={reduce ? { opacity: 0 } : { opacity: 0, y: -6 }}
@@ -241,7 +243,7 @@ export function AnalysesBoardView() {
             </Button>
           </motion.div>
         ) : null}
-      </AnimatePresence>
+        </AnimatePresence>
 
       {filtered.length === 0 ? (
         <EmptyState
@@ -279,7 +281,7 @@ export function AnalysesBoardView() {
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
-          <div className="grid gap-4 lg:grid-cols-4">
+          <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-4">
             {STAGE_ORDER.map((stage) => (
               <KanbanColumn
                 key={stage}
@@ -299,7 +301,7 @@ export function AnalysesBoardView() {
           </DragOverlay>
         </DndContext>
       ) : (
-        <TableFrame>
+        <TableFrame className="min-h-0 flex-1 overflow-hidden">
           <Table>
             <thead>
               <tr>
@@ -392,6 +394,7 @@ export function AnalysesBoardView() {
           </Table>
         </TableFrame>
       )}
+      </div>
 
       <ConfirmDialog
         open={Boolean(confirmDelete)}
@@ -402,7 +405,7 @@ export function AnalysesBoardView() {
         description="The findings, compliance matrix rows, and questions stay in place until you undo. You will have a moment to change your mind."
         onConfirm={() => confirmDelete && handleDelete(confirmDelete)}
       />
-    </div>
+    </Page>
   );
 }
 
@@ -425,11 +428,11 @@ function KanbanColumn({
       ref={setNodeRef}
       aria-label={STAGE_LABEL[stage]}
       className={cn(
-        "flex min-h-56 flex-col rounded-lg border bg-paper-raised transition-colors duration-200",
+        "flex min-h-56 min-w-0 flex-col overflow-hidden rounded-lg border bg-paper-raised transition-colors duration-200",
         isOver ? "border-patina bg-patina-tint/40" : "border-line",
       )}
     >
-      <header className="flex items-center justify-between gap-2 border-b border-line px-3.5 py-2.5">
+      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-3.5 py-2.5">
         <div className="flex items-center gap-2">
           <StageBadge stage={stage} />
           <span className="font-mono text-2xs tabular text-ink-faint">{analyses.length}</span>
@@ -440,7 +443,7 @@ function KanbanColumn({
           variants={staggerList()}
           initial={reduce ? false : "hidden"}
           animate="visible"
-          className="flex-1 space-y-2.5 p-2.5"
+          className="scroll-region min-h-0 flex-1 space-y-2.5 p-2.5"
         >
           {analyses.length === 0 ? (
             <p className="px-1 py-6 text-center text-xs text-ink-faint">Drop an analysis here</p>

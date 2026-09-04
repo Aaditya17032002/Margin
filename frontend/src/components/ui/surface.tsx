@@ -97,11 +97,23 @@ export function PageHeader({
   className?: string;
 }) {
   return (
-    <header className={cn("flex flex-wrap items-end justify-between gap-x-6 gap-y-4", className)}>
+    /*
+     * Pinned to the top of the page's scroll region, and bled out to the
+     * gutters so nothing shows through behind it. Which analysis you are
+     * looking at, and the controls that act on it, should not scroll away
+     * while you read the rows underneath.
+     */
+    <header
+      className={cn(
+        "sticky top-0 z-20 -mx-6 mb-2 flex flex-wrap items-end justify-between gap-x-6 gap-y-4",
+        "border-b border-line bg-paper px-6 pb-5 pt-7 lg:-mx-10 lg:px-10",
+        className,
+      )}
+    >
       <div className="min-w-0 max-w-2xl space-y-1.5">
         {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
-        <h1 className="display-tight text-3xl text-ink">{title}</h1>
-        {description ? <p className="text-base text-ink-soft">{description}</p> : null}
+        <h1 className="display-tight text-2xl text-ink sm:text-3xl">{title}</h1>
+        {description ? <p className="text-base leading-relaxed text-ink-soft">{description}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
     </header>

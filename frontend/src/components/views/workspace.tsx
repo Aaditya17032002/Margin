@@ -21,6 +21,8 @@ import {
   Tooltip,
 } from "@/components/ui/overlay";
 import { EmptyState } from "@/components/ui/feedback";
+import { Page, Split } from "@/components/ui/page";
+import { MarginPane, MarginSheet } from "@/components/shell/margin-rail";
 import { notify } from "@/components/ui/toaster";
 import { MiniGauge } from "@/components/domain/gauge";
 import { DocTypeBadge, STAGE_LABEL, STAGE_ORDER } from "@/components/domain/primitives";
@@ -43,7 +45,8 @@ import { useAnalysesStore } from "@/stores/analyses";
 import { useRowsFor } from "@/stores/matrix";
 import { useQuestionsFor } from "@/stores/qa";
 import { useReportsStore, useTemplatesStore } from "@/stores/workspace";
-import type { Stage } from "@/types";
+import { useUIStore } from "@/stores/ui";
+import type { Analysis, Citation, Stage } from "@/types";
 
 export function WorkspaceView({ analysisId }: { analysisId: string }) {
   const router = useRouter();
@@ -68,6 +71,9 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
   const tab: WorkspaceTabId =
     tabParam && WORKSPACE_TABS.some((t) => t.id === tabParam) ? tabParam : "go-no-go";
   const [confirmDelete, setConfirmDelete] = React.useState(false);
+
+  // The Margin is never blank when there is something it could be showing.
+  useOpeningCitation(analysis, tab);
 
   const setTab = React.useCallback(
     (next: WorkspaceTabId) => {
@@ -145,18 +151,20 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
   }
 
   return (
-    <div className="mx-auto max-w-[76rem] space-y-6">
-      <div className="space-y-4">
-        <Button asChild variant="quiet" size="sm" className="-ml-2">
-          <Link href="/app/analyses">
-            <ChevronLeft />
-            All analyses
-          </Link>
-        </Button>
-
-        <header className="flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
-          <div className="min-w-0 max-w-2xl space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
+    <Page>
+      <header className="shrink-0 border-b border-line bg-paper-raised">
+        <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-4 px-6 pb-4 pt-5 lg:px-8">
+          <div className="min-w-0 max-w-2xl">
+            <div className="flex flex-wrap items-center gap-2 pb-2">
+              <Button asChild variant="quiet" size="sm" className="-ml-2 h-6 px-1.5 text-xs">
+                <Link href="/app/analyses">
+                  <ChevronLeft />
+                  All analyses
+                </Link>
+              </Button>
+              <span className="text-ink-faint/50" aria-hidden>
+                /
+              </span>
               <DocTypeBadge docType={analysis.docType} />
               <span className="font-mono text-2xs text-ink-faint">{analysis.solicitationNumber}</span>
               <span className="text-ink-faint/60" aria-hidden>
@@ -164,8 +172,8 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
               </span>
               <span className="text-xs text-ink-faint">{analysis.agency}</span>
             </div>
-            <h1 className="display-tight text-3xl leading-tight text-ink">{analysis.title}</h1>
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-1">
+            <h1 className="display-tight truncate text-2xl leading-tight text-ink">{analysis.title}</h1>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-2.5">
               <MiniGauge gates={analysis.gates} decision={analysis.goNoGo} />
               <span className="text-xs text-ink-faint">
                 {pluralize(health.findings, "finding")} · {pluralize(health.verified, "verified", "verified")}
@@ -273,99 +281,101 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </header>
-      </div>
+        </div>
+      </header>
 
-      <div className="grid gap-6 lg:grid-cols-[13.5rem_1fr]">
-        <nav aria-label="Analysis sections" className="lg:sticky lg:top-20 lg:self-start">
-          <ul className="scrollbar-none flex gap-1 overflow-x-auto border-b border-line pb-1 lg:block lg:space-y-0.5 lg:overflow-visible lg:border-b-0 lg:pb-0">
-            {WORKSPACE_TABS.map((item) => {
-              const active = tab === item.id;
-              const count = counts[item.id];
-              return (
-                <li key={item.id} className="shrink-0 lg:shrink">
-                  <button
-                    type="button"
-                    onClick={() => setTab(item.id)}
-                    aria-current={active ? "page" : undefined}
-                    className={cn(
-                      "relative flex w-full items-center justify-between gap-2 whitespace-nowrap rounded-md px-2.5 py-2 text-left text-sm",
-                      "transition-colors duration-150 ease-[cubic-bezier(0.32,0.72,0,1)]",
-                      active ? "text-ink" : "text-ink-soft hover:bg-paper-sunk hover:text-ink",
-                    )}
-                  >
-                    {active ? (
-                      <motion.span
-                        layoutId="workspace-tab"
-                        transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 480, damping: 42 }}
-                        className="absolute inset-0 -z-10 rounded-md bg-patina-tint ring-1 ring-inset ring-[color-mix(in_oklab,var(--patina)_22%,transparent)]"
-                      />
-                    ) : null}
-                    <span className="truncate">{item.label}</span>
-                    {count ? (
-                      <span
-                        className="shrink-0 rounded-xs px-1.5 py-px font-mono text-2xs tabular"
-                        style={{
-                          color: count.tone === "neutral" ? "var(--ink-faint)" : `var(--${count.tone})`,
-                          backgroundColor:
-                            count.tone === "neutral"
-                              ? "var(--paper-sunk)"
-                              : `color-mix(in oklab, var(--${count.tone}) 12%, transparent)`,
-                        }}
-                      >
-                        {count.value}
-                      </span>
-                    ) : null}
-                  </button>
-                </li>
-              );
-            })}
+      <Split aside={<MarginPane />} width="24rem">
+        {/* Below the split breakpoint the sections become a horizontal scroller
+            above the content; above it they hold a rail of their own. */}
+        <nav aria-label="Analysis sections" className="shrink-0 border-b border-line bg-paper-raised lg:hidden">
+          <ul className="scrollbar-none flex gap-1 overflow-x-auto px-4 py-2">
+            {WORKSPACE_TABS.map((item) => (
+              <li key={item.id} className="shrink-0">
+                <TabButton
+                  item={item}
+                  active={tab === item.id}
+                  count={counts[item.id]}
+                  reduce={Boolean(reduce)}
+                  onSelect={() => setTab(item.id)}
+                />
+              </li>
+            ))}
           </ul>
         </nav>
 
-        <div className="min-w-0">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={tab}
-              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={reduce ? { opacity: 0 } : { opacity: 0, y: -4 }}
-              transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
-            >
-              {tab === "go-no-go" ? <GoNoGoPanel analysis={analysis} /> : null}
-              {tab === "overview" ? <OverviewPanel analysis={analysis} /> : null}
-              {tab === "scope" ? (
-                <FindingsPanel
-                  analysis={analysis}
-                  sections={[
-                    { key: "scope", title: "Scope of work", description: "What is actually being bought." },
-                    { key: "postAward", title: "Post-award obligations", description: "What follows the signature." },
-                  ]}
-                />
-              ) : null}
-              {tab === "matrix" ? <ComplianceMatrix analysisId={analysis.id} /> : null}
-              {tab === "legal" ? (
-                <FindingsPanel
-                  analysis={analysis}
-                  sections={[
-                    {
-                      key: "legal",
-                      title: "Legal & regulatory",
-                      description: "Statutes, standards, and the terms that are not negotiable.",
-                    },
-                  ]}
-                />
-              ) : null}
-              {tab === "evaluation" ? <EvaluationPanel analysis={analysis} /> : null}
-              {tab === "risks" ? <RisksPanel analysis={analysis} /> : null}
-              {tab === "questions" ? <QAndABuilder analysis={analysis} /> : null}
-              {tab === "silent" ? <SilentPanel analysis={analysis} /> : null}
-              {tab === "amendments" ? <AmendmentsPanel analysis={analysis} /> : null}
-              {tab === "versions" ? <VersionsPanel analysis={analysis} /> : null}
-            </motion.div>
-          </AnimatePresence>
+        <div className="flex min-h-0 flex-1">
+          <nav
+            aria-label="Analysis sections"
+            className="scroll-region hidden w-56 shrink-0 border-r border-line bg-paper-raised px-3 py-4 lg:block"
+          >
+            <ul className="space-y-1">
+              {WORKSPACE_TABS.map((item) => (
+                <li key={item.id}>
+                  <TabButton
+                    item={item}
+                    active={tab === item.id}
+                    count={counts[item.id]}
+                    reduce={Boolean(reduce)}
+                    onSelect={() => setTab(item.id)}
+                  />
+                </li>
+              ))}
+            </ul>
+          </nav>
+
+          {/* The one region on this screen that scrolls. Everything framing it
+              — identity, sections, the Margin — stays where it was put. */}
+          {/* `@container` so the panels lay themselves out against the width
+              they actually have. A viewport breakpoint would put two columns in
+              this pane on a wide screen even when the Margin has taken most of
+              the room. */}
+          <div className="scroll-region @container min-h-0 min-w-0 flex-1 px-6 py-7 lg:px-8">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={tab}
+                initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={reduce ? { opacity: 0 } : { opacity: 0, y: -4 }}
+                transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+                className="mx-auto max-w-[64rem]"
+              >
+                {tab === "go-no-go" ? <GoNoGoPanel analysis={analysis} /> : null}
+                {tab === "overview" ? <OverviewPanel analysis={analysis} /> : null}
+                {tab === "scope" ? (
+                  <FindingsPanel
+                    analysis={analysis}
+                    sections={[
+                      { key: "scope", title: "Scope of work", description: "What is actually being bought." },
+                      { key: "postAward", title: "Post-award obligations", description: "What follows the signature." },
+                    ]}
+                  />
+                ) : null}
+                {tab === "matrix" ? <ComplianceMatrix analysisId={analysis.id} /> : null}
+                {tab === "legal" ? (
+                  <FindingsPanel
+                    analysis={analysis}
+                    sections={[
+                      {
+                        key: "legal",
+                        title: "Legal & regulatory",
+                        description: "Statutes, standards, and the terms that are not negotiable.",
+                      },
+                    ]}
+                  />
+                ) : null}
+                {tab === "evaluation" ? <EvaluationPanel analysis={analysis} /> : null}
+                {tab === "risks" ? <RisksPanel analysis={analysis} /> : null}
+                {tab === "questions" ? <QAndABuilder analysis={analysis} /> : null}
+                {tab === "silent" ? <SilentPanel analysis={analysis} /> : null}
+                {tab === "amendments" ? <AmendmentsPanel analysis={analysis} /> : null}
+                {tab === "versions" ? <VersionsPanel analysis={analysis} /> : null}
+              </motion.div>
+            </AnimatePresence>
+          </div>
         </div>
-      </div>
+      </Split>
+
+      <MarginSheet />
 
       <ConfirmDialog
         open={confirmDelete}
@@ -386,6 +396,119 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
           }
         }}
       />
-    </div>
+    </Page>
+  );
+}
+
+/**
+ * The first citation a section can offer, so the Margin opens holding a real
+ * clause instead of an instruction about clauses. A person who has pinned a
+ * source, or pointed at one themselves, is left alone.
+ */
+function useOpeningCitation(analysis: Analysis | undefined, tab: WorkspaceTabId) {
+  const peek = useUIStore((s) => s.peek);
+
+  React.useEffect(() => {
+    if (!analysis) return;
+    const state = useUIStore.getState();
+    if (state.pinned) return;
+
+    const opening = firstCitationFor(analysis, tab);
+    if (!opening) return;
+    peek(opening);
+    // Only when the section or the analysis changes — pointing at a different
+    // finding inside a section must not be undone on the next render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysis?.id, tab]);
+}
+
+function firstCitationFor(analysis: Analysis, tab: WorkspaceTabId) {
+  const pick = (
+    citation: Citation | undefined,
+    label: string,
+    origin: string,
+  ) => (citation?.quote ? { citation, analysisId: analysis.id, label, origin } : undefined);
+
+  switch (tab) {
+    case "go-no-go": {
+      const gate = analysis.gates.find((g) => g.citation?.quote);
+      return gate ? pick(gate.citation, gate.question, "Go / No-Go") : undefined;
+    }
+    case "scope": {
+      const finding = [...analysis.scope, ...analysis.postAward].find((f) => f.citation?.quote);
+      return finding ? pick(finding.citation, finding.label, "Scope") : undefined;
+    }
+    case "legal": {
+      const finding = analysis.legal.find((f) => f.citation?.quote);
+      return finding ? pick(finding.citation, finding.label, "Legal & regulatory") : undefined;
+    }
+    case "evaluation": {
+      const factor = analysis.evaluation.find((f) => f.citation?.quote);
+      return factor ? pick(factor.citation, factor.name, "Evaluation") : undefined;
+    }
+    case "risks": {
+      const risk = analysis.risks.find((r) => r.citation?.quote);
+      return risk ? pick(risk.citation, risk.title, "Risk") : undefined;
+    }
+    case "overview": {
+      const finding = analysis.identity.find((f) => f.citation?.quote);
+      return finding ? pick(finding.citation, finding.label, "Overview") : undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * One section in the workspace rail. Shared by the vertical rail and the
+ * horizontal scroller so the two can never drift apart.
+ */
+function TabButton({
+  item,
+  active,
+  count,
+  reduce,
+  onSelect,
+}: {
+  item: (typeof WORKSPACE_TABS)[number];
+  active: boolean;
+  count?: { value: number; tone: "seal" | "ochre" | "neutral" };
+  reduce: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "relative flex w-full items-center justify-between gap-2 whitespace-nowrap rounded-md px-3 py-2 text-left text-sm",
+        "transition-colors duration-150 ease-[cubic-bezier(0.32,0.72,0,1)]",
+        active ? "text-ink" : "text-ink-soft hover:bg-paper-sunk hover:text-ink",
+      )}
+    >
+      {active ? (
+        <motion.span
+          layoutId="workspace-tab"
+          transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 480, damping: 42 }}
+          className="absolute inset-0 -z-10 rounded-md bg-patina-tint ring-1 ring-inset ring-[color-mix(in_oklab,var(--patina)_22%,transparent)]"
+        />
+      ) : null}
+      <span className="truncate">{item.label}</span>
+      {count ? (
+        <span
+          className="shrink-0 rounded-xs px-1.5 py-px font-mono text-2xs tabular"
+          style={{
+            color: count.tone === "neutral" ? "var(--ink-faint)" : `var(--${count.tone})`,
+            backgroundColor:
+              count.tone === "neutral"
+                ? "var(--paper-sunk)"
+                : `color-mix(in oklab, var(--${count.tone}) 12%, transparent)`,
+          }}
+        >
+          {count.value}
+        </span>
+      ) : null}
+    </button>
   );
 }

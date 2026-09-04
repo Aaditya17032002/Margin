@@ -51,10 +51,13 @@ export function ComplianceMatrix({
   analysisId,
   showAnalysisColumn = false,
   analysisTitles,
+  className,
 }: {
   analysisId?: string;
   showAnalysisColumn?: boolean;
   analysisTitles?: Record<string, string>;
+  /** Pass `min-h-0 flex-1` to let the grid own the height it is given. */
+  className?: string;
 }) {
   const allRows = useMatrixStore((s) => s.rows);
   const updateRow = useMatrixStore((s) => s.updateRow);
@@ -291,8 +294,8 @@ export function ComplianceMatrix({
   const filtersActive = typeFilter !== "all" || stakesFilter !== "all" || statusFilter !== "all" || Boolean(query);
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-4">
+    <div className={cn("flex flex-col gap-4", className)}>
+      <div className="grid shrink-0 gap-3 @xl:grid-cols-2 @4xl:grid-cols-4">
         <Stat label="Requirements" value={String(progress.total)} />
         <Stat label="Disqualifying" value={String(progress.disqualifying)} tone="seal" />
         <Stat label="Unassigned" value={String(progress.unassigned)} tone={progress.unassigned ? "ochre" : undefined} />
@@ -303,7 +306,7 @@ export function ComplianceMatrix({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2.5">
+      <div className="flex shrink-0 flex-wrap items-center gap-2.5">
         <SearchField
           value={query}
           onValueChange={setQuery}
@@ -499,7 +502,7 @@ export function ComplianceMatrix({
           }
         />
       ) : (
-        <TableFrame>
+        <TableFrame className="min-h-0 flex-1">
           <Table>
             <thead>
               {table.getHeaderGroups().map((group) => (

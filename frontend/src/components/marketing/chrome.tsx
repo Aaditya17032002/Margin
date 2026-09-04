@@ -11,8 +11,8 @@ import { Wordmark } from "@/components/domain/marks";
 import { useSessionStore } from "@/stores/session";
 
 const LINKS = [
-  { href: "/#how", label: "How it reads" },
   { href: "/#margin", label: "The Margin" },
+  { href: "/#how", label: "How it reads" },
   { href: "/#evidence", label: "Evidence" },
   { href: "/pricing", label: "Pricing" },
 ];
@@ -23,8 +23,8 @@ export function MarketingHeader() {
   const [open, setOpen] = React.useState(false);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-line bg-paper/85 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-[76rem] items-center gap-6 px-5 lg:px-8">
+    <header className="sticky top-0 z-50 border-b border-line bg-[color-mix(in_oklab,var(--paper)_82%,transparent)] backdrop-blur-xl">
+      <div className="mx-auto flex h-18 max-w-[78rem] items-center gap-8 px-6 sm:px-8">
         <Link href="/" className="shrink-0 rounded-sm" aria-label="Margin, home">
           <Wordmark />
         </Link>
@@ -136,9 +136,9 @@ const FOOTER_GROUPS = [
 export function MarketingFooter() {
   return (
     <footer className="border-t border-line bg-paper-raised">
-      <div className="mx-auto max-w-[76rem] px-5 py-14 lg:px-8">
-        <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
-          <div className="max-w-xs space-y-3">
+      <div className="mx-auto max-w-[78rem] px-6 py-20 sm:px-8">
+        <div className="grid gap-12 md:grid-cols-[1.5fr_repeat(3,1fr)] lg:gap-16">
+          <div className="max-w-xs space-y-4">
             <Wordmark />
             <p className="text-sm leading-relaxed text-ink-soft">
               Read the solicitation properly. Every finding carries the clause it came from, in the margin where it
@@ -147,8 +147,8 @@ export function MarketingFooter() {
           </div>
           {FOOTER_GROUPS.map((group) => (
             <div key={group.title}>
-              <p className="eyebrow pb-3">{group.title}</p>
-              <ul className="space-y-2">
+              <p className="eyebrow pb-4">{group.title}</p>
+              <ul className="space-y-2.5">
                 {group.links.map((link, i) => (
                   <li key={`${link.href}-${i}`}>
                     <Link
@@ -164,9 +164,9 @@ export function MarketingFooter() {
           ))}
         </div>
 
-        <div className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-6">
+        <div className="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-8">
           <p className="font-mono text-2xs text-ink-faint">
-            © {YEAR} Margin. A demonstration product — every solicitation shown is fictional.
+            © {YEAR} Margin. The solicitation shown on this page is fictional.
           </p>
           <p className="font-mono text-2xs text-ink-faint">Set in Fraunces and Geist.</p>
         </div>

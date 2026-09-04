@@ -154,7 +154,9 @@ export function ReadingProgress({ value }: { value: number }) {
       aria-valuemin={0}
       aria-valuemax={100}
       aria-label="Analysis progress"
-      className="fixed inset-x-0 top-0 z-50 h-[3px] bg-transparent"
+      // Absolute inside the reading room rather than fixed to the window: the
+      // top bar is a real element now, and a fixed bar would sit over it.
+      className="absolute inset-x-0 top-0 z-30 h-[3px] bg-transparent"
     >
       <motion.div
         className="h-full bg-patina"
@@ -164,4 +166,100 @@ export function ReadingProgress({ value }: { value: number }) {
       />
     </div>
   );
+}
+
+
+/**
+ * A document being read, as a picture. Lines fill in as the pass advances and a
+ * band of light sweeps the page while an agent is working — enough motion to
+ * show the machine is alive, not so much that it competes with the findings
+ * arriving beside it.
+ */
+export function ReadingPulse({
+  active,
+  progress,
+  className,
+}: {
+  active: boolean;
+  /** 0–1. */
+  progress: number;
+  className?: string;
+}) {
+  const reduce = useReducedMotion();
+  const rows = 9;
+  const filled = Math.round(progress * rows);
+
+  return (
+    <div className={cn("relative overflow-hidden rounded-lg border border-line bg-paper-sunk", className)}>
+      <div className="relative px-5 py-5">
+        {/* The binding rule, as on a printed solicitation. */}
+        <span
+          aria-hidden
+          className="absolute inset-y-5 left-[2.15rem] w-px bg-[color-mix(in_oklab,var(--seal)_22%,transparent)]"
+        />
+        <div className="space-y-2.5">
+          {Array.from({ length: rows }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <span className="w-4 shrink-0 text-right font-mono text-2xs text-ink-faint/50 tabular">{i + 1}</span>
+              <motion.span
+                aria-hidden
+                initial={false}
+                animate={{
+                  backgroundColor:
+                    i < filled
+                      ? "color-mix(in oklab, var(--ink-faint) 42%, transparent)"
+                      : "color-mix(in oklab, var(--line-strong) 55%, transparent)",
+                  width: i < filled ? `${58 + ((i * 37) % 38)}%` : `${34 + ((i * 23) % 26)}%`,
+                }}
+                transition={{ duration: reduce ? 0 : 0.5, ease: [0.32, 0.72, 0, 1] }}
+                className="h-[5px] rounded-full"
+              />
+            </div>
+          ))}
+        </div>
+
+        {active && !reduce ? (
+          <span aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+            <span className="absolute inset-y-0 -left-1/3 w-1/3 animate-[sweep_2.4s_cubic-bezier(0.32,0.72,0,1)_infinite] bg-[linear-gradient(90deg,transparent,var(--gold-highlight),transparent)]" />
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A number that counts up to whatever it is given. Findings arriving one at a
+ * time deserve a counter that moves like one.
+ */
+export function CountUp({ value, className }: { value: number; className?: string }) {
+  const reduce = useReducedMotion();
+  const [shown, setShown] = React.useState(value);
+  // Where the next animation starts from, kept in a ref so updating it does
+  // not itself schedule a render.
+  const from = React.useRef(value);
+
+  React.useEffect(() => {
+    if (reduce) return;
+    const start = from.current;
+    const delta = value - start;
+    if (delta === 0) return;
+
+    const steps = Math.min(18, Math.max(6, Math.abs(delta) * 3));
+    let frame = 0;
+    let raf = 0;
+    const tick = () => {
+      frame += 1;
+      const t = frame / steps;
+      const next = Math.round(start + delta * (1 - Math.pow(1 - t, 3)));
+      from.current = next;
+      setShown(next);
+      if (frame < steps) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, reduce]);
+
+  // Reduced motion skips the animation entirely rather than fast-forwarding it.
+  return <span className={cn("tabular", className)}>{reduce ? value : shown}</span>;
 }

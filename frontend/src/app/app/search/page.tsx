@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 
 import { SearchView } from "@/components/views/search";
 import { SkeletonPanel } from "@/components/ui/feedback";
+import { ScrollPage } from "@/components/ui/page";
 
 export const metadata: Metadata = {
   title: "Search",
@@ -11,8 +12,10 @@ export const metadata: Metadata = {
 
 export default function SearchPage() {
   return (
-    <Suspense fallback={<SkeletonPanel className="mx-auto max-w-4xl" />}>
-      <SearchView />
-    </Suspense>
+    <ScrollPage>
+      <Suspense fallback={<SkeletonPanel className="mx-auto max-w-4xl" />}>
+        <SearchView />
+      </Suspense>
+    </ScrollPage>
   );
 }
