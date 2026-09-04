@@ -19,7 +19,7 @@ import { Panel, PanelHeader, Well } from "@/components/ui/surface";
 import { Callout, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { CitationMeta } from "@/components/domain/primitives";
-import type { Analysis, VerificationItem, VerificationQueue } from "@/types";
+import type { Analysis, VerificationCorpus, VerificationItem, VerificationQueue } from "@/types";
 
 /**
  * The verification queue.
@@ -171,6 +171,8 @@ export function VerificationPanel({
         );
       })}
 
+      <Disagreement analysisId={analysis.id} />
+
       <Well>
         <p className="text-xs leading-relaxed text-ink-soft">
           <strong className="font-medium text-ink">This list is derived, never stored.</strong> Every
@@ -180,6 +182,89 @@ export function VerificationPanel({
         </p>
       </Well>
     </div>
+  );
+}
+
+/**
+ * What happened last time somebody checked.
+ *
+ * Every confirmation and correction on this analysis is a labelled example
+ * produced by somebody holding the document, and it is shown here for one
+ * reason: to say whether the machine's answers on *this* solicitation have been
+ * worth trusting. `wouldHaveShipped` counts corrections out of "answered" —
+ * the ones that would have gone out in a proposal.
+ *
+ * It appears only once there is something to say. A panel reporting a 0%
+ * correction rate over two judgements is worse than no panel.
+ */
+function Disagreement({ analysisId }: { analysisId: string }) {
+  const [corpus, setCorpus] = React.useState<VerificationCorpus | null>(null);
+
+  React.useEffect(() => {
+    let live = true;
+    verificationApi
+      .corpus(analysisId)
+      .then((result) => {
+        if (live) setCorpus(result);
+      })
+      .catch(() => {
+        if (live) setCorpus(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [analysisId]);
+
+  // Below this the rate is noise dressed as a measurement.
+  if (!corpus || corpus.total < 5) return null;
+
+  const worst = corpus.byRule.filter((bucket) => bucket.corrected > 0).slice(0, 4);
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="How often the checks have been right here"
+        description={`${corpus.total} ${pluralize(corpus.total, "judgement")} recorded on this analysis.`}
+      />
+      <div className="space-y-4 px-5 pb-5 pt-1">
+        <p className="text-sm text-ink-soft tabular-nums">
+          {corpus.confirmed} confirmed, {corpus.corrected} overruled, {corpus.flagged} flagged —{" "}
+          a {(corpus.correctionRate * 100).toFixed(0)}% correction rate.
+        </p>
+        {corpus.wouldHaveShipped > 0 ? (
+          <Callout tone="ochre" title={`${corpus.wouldHaveShipped} of those would have gone out`}>
+            The check said the requirement was answered and a person found that it was not. Those
+            are the corrections worth reading — not because somebody made a mistake, but because
+            the check did.
+          </Callout>
+        ) : null}
+        {worst.length ? (
+          <div>
+            <p className="text-2xs uppercase tracking-[0.08em] text-ink-faint">
+              Most often overruled
+            </p>
+            <ul className="mt-2 space-y-1.5">
+              {worst.map((bucket) => (
+                <li key={bucket.name} className="flex items-center gap-3 text-xs">
+                  <span className="w-40 shrink-0 font-mono text-2xs text-ink-soft">
+                    {bucket.name.replace(/[._]/g, " ")}
+                  </span>
+                  <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-paper-sunk">
+                    <span
+                      className="block h-full rounded-full bg-[var(--ochre)]"
+                      style={{ width: `${Math.max(2, Math.round(bucket.correctionRate * 100))}%` }}
+                    />
+                  </span>
+                  <span className="w-28 shrink-0 text-right font-mono text-2xs text-ink-faint tabular-nums">
+                    {bucket.corrected}/{bucket.total} overruled
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </Panel>
   );
 }
 

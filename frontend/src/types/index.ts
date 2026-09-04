@@ -509,6 +509,54 @@ export interface VerificationQueue {
  */
 export type QuestionStatus = "draft" | "submitted" | "answered" | "withdrawn";
 
+/**
+ * Where the machine and the people using it disagree.
+ *
+ * Every confirmation and correction is a labelled example produced by somebody
+ * holding the document. Grouped by the things a fix can be aimed at, because a
+ * single accuracy figure says the product is 87% right and gives nobody
+ * anywhere to start.
+ */
+export interface DisagreementBucket {
+  name: string;
+  total: number;
+  corrected: number;
+  flagged: number;
+  correctionRate: number;
+}
+
+export interface VerdictRecord {
+  id: string;
+  at: string | null;
+  analysisId: string;
+  outcome: "confirmed" | "corrected" | "flagged";
+  reference: string;
+  requirement: string;
+  machineStatus: string;
+  machineDecidedBy: string;
+  machineRule: string;
+  humanStatus: string;
+  note: string | null;
+  stakes: Stakes;
+  actor: string;
+}
+
+export interface VerificationCorpus {
+  total: number;
+  confirmed: number;
+  corrected: number;
+  flagged: number;
+  correctionRate: number;
+  /** Corrections out of `satisfied` — the ones that would have gone out. */
+  wouldHaveShipped: number;
+  byRule: DisagreementBucket[];
+  byDecider: DisagreementBucket[];
+  byVerification: DisagreementBucket[];
+  byStakes: DisagreementBucket[];
+  transitions: { from: string; to: string; count: number }[];
+  recent: VerdictRecord[];
+}
+
 export interface QAQuestion {
   id: string;
   analysisId: string;

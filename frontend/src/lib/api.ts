@@ -31,6 +31,7 @@ import type {
   Template,
   TeamMember,
   AuditEntry,
+  VerificationCorpus,
   VerificationQueue,
   WorkItem,
 } from "@/types";
@@ -364,6 +365,16 @@ export const verificationApi = {
    */
   queue: (analysisId: string) =>
     api<VerificationQueue>(`/api/v1/analyses/${analysisId}/verification`),
+
+  /**
+   * Where the machine and the people using it disagree, across every analysis
+   * or within one. Built from recorded judgements, so it is only as good as
+   * how much reviewing has actually happened.
+   */
+  corpus: (analysisId?: string) =>
+    api<VerificationCorpus>(
+      `/api/v1/verification/corpus${analysisId ? `?analysis_id=${analysisId}` : ""}`,
+    ),
 };
 
 /* ------------------------------------------------------------------ */

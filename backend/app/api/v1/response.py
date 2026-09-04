@@ -20,6 +20,7 @@ from app.core.deps import CurrentUser, DbSession
 from app.core.documents import store_document, to_response as _document_response
 from app.core.logging import get_logger
 from app.core.queue import enqueue
+from app.pipeline import verdicts
 from app.db.models.analysis import Analysis
 from app.db.models.requirement import Requirement
 from app.db.models.response_check import ResponseCheck
@@ -210,7 +211,11 @@ async def decide_check(
 
     now = datetime.now(UTC)
     update = body.model_dump(exclude_unset=True, by_alias=False)
+    # Read before the edit: `decided_by` and `detail` are about to become the
+    # human's, and the label needs what the machine said.
     previous = row.status
+    machine_decided_by = row.decided_by
+    machine_detail = row.detail
 
     if "status" in update and update["status"] is not None:
         row.status = update["status"].value if hasattr(update["status"], "value") else update["status"]
@@ -232,9 +237,33 @@ async def decide_check(
     if row.note:
         detail = f"{detail}: {row.note}"
     row.history = [*(row.history or []), {"at": now.isoformat(), "event": "decided", "detail": detail}]
-    await db.flush()
 
     requirement = (
         await db.execute(select(Requirement).where(Requirement.id == row.requirement_id))
     ).scalar_one_or_none()
+
+    # The decision is also a labelled example, produced by somebody who knows
+    # the answer. It used to become a sentence in a history array and stop
+    # being usable for anything.
+    await verdicts.record(
+        db,
+        org_id=user.org_id,
+        analysis_id=analysis_id,
+        subject_kind="response_check",
+        subject_id=row.id,
+        machine_status=previous,
+        machine_decided_by=machine_decided_by,
+        machine_rule=row.rule,
+        machine_detail=machine_detail,
+        machine_evidence=row.evidence or {},
+        human_status=row.status,
+        note=row.note,
+        reference=requirement.reference if requirement else "",
+        requirement_text=requirement.text if requirement else "",
+        stakes=requirement.stakes if requirement else "scored",
+        verification=row.verification,
+        response_excerpt=str((row.evidence or {}).get("quote") or ""),
+        actor=user.id,
+    )
+    await db.flush()
     return _to_response(row, requirement)

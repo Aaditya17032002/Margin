@@ -23,6 +23,7 @@ from sqlalchemy import select
 
 from app.core.deps import CurrentUser, DbSession
 from app.db.models.requirement import Requirement
+from app.pipeline import verdicts
 from app.pipeline.requirements import classify_stakes, classify_type, classify_verification, stable_key
 from app.schemas.resources import (
     BulkMatrixRequest,
@@ -208,6 +209,7 @@ async def update_matrix_row(analysis_id: str, row_id: str, body: MatrixRowUpdate
 
     update = body.model_dump(exclude_unset=True, by_alias=False)
     now = datetime.now(UTC)
+    previous_status = row.status
     events: list[str] = []
 
     for key, value in update.items():
@@ -245,6 +247,29 @@ async def update_matrix_row(analysis_id: str, row_id: str, body: MatrixRowUpdate
 
     if events:
         row.history = [*(row.history or []), {"at": now.isoformat(), "event": "edited", "detail": "; ".join(events)}]
+
+    # Clearing a requirement is a judgement about compliance, so it is recorded
+    # the same way a response check is: what the extraction said, what the
+    # person concluded, and the clause both were reading.
+    if "status" in update:
+        await verdicts.record(
+            db,
+            org_id=user.org_id,
+            analysis_id=analysis_id,
+            subject_kind="requirement",
+            subject_id=row.id,
+            machine_status=previous_status,
+            machine_decided_by="rule" if row.verification == "mechanical" else "model",
+            machine_detail="; ".join(events),
+            human_status=row.status,
+            note=row.note,
+            reference=row.reference,
+            requirement_text=row.text,
+            stakes=row.stakes,
+            verification=row.verification,
+            response_excerpt=row.response_location or "",
+            actor=user.id,
+        )
     await db.flush()
     return _to_response(row)
 
