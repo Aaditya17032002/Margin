@@ -311,16 +311,20 @@ async def _amendment_impact(
     removed_rows = [by_key[key] for key in reconciliation.removed if key in by_key]
 
     # The base document still contains the wording an amendment replaced, so a
-    # replacement arrives as an addition with no matching removal. Anything the
-    # amendment introduced is therefore matched against what was already
-    # standing elsewhere in the package: amendments win.
-    from_amendment = [row for row in added_rows if row.document_id in amendment_ids]
+    # replacement arrives as an addition with no matching removal. Anything an
+    # amendment states is therefore matched against what stands elsewhere in
+    # the package: amendments win.
+    #
+    # Deliberately every open amendment requirement, not only the ones this run
+    # added. A package uploaded with its amendment already in it has no earlier
+    # run to have "added" anything, and pairing only fresh additions would
+    # leave two contradictory page limits both reading as live. Re-pairing is
+    # harmless: a requirement already superseded is no longer open.
+    from_amendment = [
+        row for row in rows if row.state == "open" and row.document_id in amendment_ids
+    ]
     standing = [
-        row
-        for row in rows
-        if row.state == "open"
-        and row.document_id not in amendment_ids
-        and row.key not in set(reconciliation.added)
+        row for row in rows if row.state == "open" and row.document_id not in amendment_ids
     ]
 
     pairs = amendments.pair(removed_rows, added_rows) + amendments.pair(standing, from_amendment)

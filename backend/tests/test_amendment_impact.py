@@ -211,3 +211,23 @@ def test_a_superseded_requirement_is_never_counted_as_withdrawn():
     )
     assert record["summary"] == "1 requirement changed."
     assert [c["kind"] for c in record["changes"]] == ["changed"]
+
+
+def test_a_package_uploaded_with_its_amendment_still_pairs_the_replacement():
+    """There is no earlier run to have "added" anything, but the base document
+    still carries the wording the amendment replaced. Pairing only fresh
+    additions would leave two contradictory page limits both reading as live."""
+    standing = _row(OLD_LIMIT, reference="SECTION L")
+    replacement = _row(
+        "A.2 Section L.1 is deleted in its entirety and replaced with the following: " + NEW_LIMIT,
+        reference="AMENDMENT 0001",
+    )
+    rows = {standing.key: standing, replacement.key: replacement}
+
+    # Both were found on the same first read — the pairing input is every open
+    # requirement, not only the ones a reconciliation reported as new.
+    amendments.apply(amendments.pair([standing], [replacement]), rows)
+
+    assert standing.state == "superseded"
+    assert replacement.reference == "L.1"
+    assert standing.superseded_by_id == replacement.id
