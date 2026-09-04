@@ -147,6 +147,33 @@ export interface KeyDate {
   source?: "document" | "derived";
 }
 
+/** One page a deep-research pass actually read on the open web. */
+export interface ResearchSource {
+  url: string;
+  title: string;
+  /** The host, e.g. `acquisition.gov`. Whose site it is carries most of the weight. */
+  site: string;
+}
+
+/**
+ * What the open web said, which is never the same kind of thing as what the
+ * document says. It has no page, no clause, and no citation — only sources.
+ */
+export interface ExternalResearch {
+  status:
+    | "not_requested"
+    | "completed"
+    | "rate_limited"
+    | "timeout"
+    | "skipped"
+    | "failed";
+  detail: string;
+  query: string;
+  summary: string;
+  sources: ResearchSource[];
+  at?: string | null;
+}
+
 export interface Clin {
   id: string;
   number: string;
@@ -227,6 +254,8 @@ export interface Analysis {
   amendments: AmendmentRecord[];
   pages: DocumentPage[];
   versions: { id: string; label: string; at: string; author: string; note: string }[];
+  /** Only a deep-research pass fills this in; other modes leave it empty. */
+  research?: ExternalResearch;
 }
 
 export interface MatrixRow {

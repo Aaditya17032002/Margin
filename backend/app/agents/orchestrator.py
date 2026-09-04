@@ -7,7 +7,9 @@ and merges results into the analysis.
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 from redis.asyncio import Redis
 
@@ -144,51 +146,41 @@ async def run_orchestration(
         await redis.publish(channel, AgentEvent(EventType.AGENT_COMPLETED, "dates").to_json())
 
     # ── External research (only for deep-research mode) ──────────────────
-    research_status = {"status": "not_requested", "detail": ""}
+    #
+    # What comes back is not a finding about the solicitation — it is what the
+    # open web says about the rules the solicitation sits inside. It is kept in
+    # its own record, with every source that produced it, so the workspace can
+    # show a reader where each claim came from and never present a web page as
+    # a clause in their document.
+    research: dict = {"status": "not_requested", "detail": "", "query": "", "summary": "", "sources": []}
     if mode == "deep-research":
         try:
             research_provider = get_research_provider()
             generic_query = _generic_research_query(all_findings)
             logger.info("deep_research_query", query=generic_query)
-            research_result = await research_provider.research(generic_query)
-            research_status = {
-                "status": research_result.status,
-                "detail": research_result.detail,
+            result = await research_provider.research(generic_query)
+            research = {
+                "status": result.status,
+                "detail": result.detail,
+                "query": result.query_used,
+                "summary": "\n\n".join(str(f.get("summary") or "") for f in result.findings).strip(),
+                "sources": _dedupe_sources(result.sources),
+                "at": datetime.now(UTC).isoformat(),
             }
-            for f in research_result.findings:
-                all_findings["legal"].append({
-                    "id": f.get("id") or f"dr_{len(all_findings['legal'])}",
-                    "label": f.get("title", "External research"),
-                    "value": f.get("summary", ""),
-                    "confidence": 0.7,
-                    "stakes": "informational",
-                    "citation": {
-                        "id": f"c_{f.get('id') or len(all_findings['legal'])}",
-                        "page": 0,
-                        "section": "External research",
-                        # An external finding is not in the solicitation, so it
-                        # is never "located" — the source is the URL, and the
-                        # workspace shows it as research rather than a clause.
-                        "quote": (research_result.sources[0]["url"] if research_result.sources else ""),
-                        "bbox": {"x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0},
-                        "lines": None,
-                        "located": False,
-                        "matchScore": 0.0,
-                    },
-                    "verified": None,
-                    "flagged": False,
-                })
-            if research_result.status != "completed":
-                # A deep-research run that produced no research must say so on
-                # the analysis, not only in the worker log.
-                await redis.publish(channel, AgentEvent(
-                    EventType.REASONING_TICK,
-                    "research",
-                    {"text": _research_note(research_result.status, research_result.detail)},
-                ).to_json())
+            await redis.publish(channel, AgentEvent(
+                EventType.REASONING_TICK,
+                "research",
+                {
+                    "text": (
+                        f"Read {len(research['sources'])} sources on the open web."
+                        if result.status == "completed"
+                        else _research_note(result.status, result.detail)
+                    )
+                },
+            ).to_json())
         except Exception as exc:  # noqa: BLE001 — research is additive, never fatal
             logger.exception("deep_research_failed")
-            research_status = {"status": "failed", "detail": str(exc)[:300]}
+            research = {**research, "status": "failed", "detail": str(exc)[:300]}
 
     # ── Verifier pass ────────────────────────────────────────────────────
     if "verifier" in roster:
@@ -235,7 +227,7 @@ async def run_orchestration(
         "silent": silent_items,
         "questions": questions,
         "dates": key_dates,
-        "research": research_status,
+        "research": research,
     }
 
 
@@ -251,6 +243,29 @@ RESEARCH_NOTES = {
     "skipped": "External research is not configured for this workspace.",
     "failed": "External research could not be completed.",
 }
+
+
+def _dedupe_sources(sources: list[dict]) -> list[dict]:
+    """One entry per URL, carrying the host so a reader can judge it at a glance.
+
+    Whose site a claim came from is most of what makes it worth trusting —
+    acquisition.gov and a consultancy blog are not the same evidence.
+    """
+    seen: set[str] = set()
+    out: list[dict] = []
+    for source in sources:
+        url = str(source.get("url") or "").strip()
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        out.append(
+            {
+                "url": url,
+                "title": str(source.get("title") or url)[:300],
+                "site": urlparse(url).netloc.removeprefix("www."),
+            }
+        )
+    return out[:40]
 
 
 def _research_note(status: str, detail: str) -> str:

@@ -182,6 +182,7 @@ def _render_docx(
 
     _decision(doc, analysis)
     _calendar(doc, analysis)
+    _research(doc, analysis)
     _evaluation(doc, analysis)
     _risks(doc, analysis)
     _findings(doc, analysis)
@@ -279,6 +280,28 @@ def _render_markdown(
             source = "Stated in document" if date.get("source") != "derived" else "Planned by Margin"
             out.append(f"| {str(date.get('at', ''))[:16].replace('T', ' ')} | {date.get('label', '')} | {source} |")
 
+    research = analysis.research or {}
+    if str(research.get("status") or "not_requested") != "not_requested":
+        out += ["", "## External research", ""]
+        out.append(
+            "*Read on the open web, not in the solicitation. No clause reference, because there is none to give.*"
+        )
+        if str(research.get("status")) != "completed":
+            out.append("")
+            out.append(f"This pass returned no research ({str(research.get('status')).replace('_', ' ')}).")
+        else:
+            if research.get("query"):
+                out += ["", f"**Searched for:** {research['query']}"]
+            if research.get("summary"):
+                out += ["", str(research["summary"])]
+            sources = research.get("sources") or []
+            out += ["", "### Sources", ""]
+            if not sources:
+                out.append("This pass returned no sources. Treat the above as a lead to check, not as evidence.")
+            for source in sources:
+                title = str(source.get("title") or source.get("url") or "")
+                out.append(f"- [{title}]({source.get('url', '')}) — {source.get('site', '')}")
+
     for section_name, attr in FINDING_SECTIONS:
         findings = getattr(analysis, attr) or []
         if not findings:
@@ -375,6 +398,53 @@ def _calendar(doc, analysis: Analysis) -> None:
         cells[0].text = str(date.get("at", ""))[:16].replace("T", " ")
         cells[1].text = str(date.get("label", ""))
         cells[2].text = "Stated in document" if date.get("source") != "derived" else "Planned by Margin"
+
+
+def _research(doc, analysis: Analysis) -> None:
+    """External research, under its own heading and with its sources listed.
+
+    A reviewer reading this document offline has no way to ask where a claim
+    came from, so the answer has to be printed next to it.
+    """
+    research = analysis.research or {}
+    status = str(research.get("status") or "not_requested")
+    if status == "not_requested":
+        return
+
+    doc.add_heading("External research", level=1)
+    doc.add_paragraph(
+        "The following was read on the open web, not in the solicitation. It is "
+        "context for the rules this procurement sits inside, and it carries no "
+        "clause reference because there is none to give."
+    )
+    if status != "completed":
+        doc.add_paragraph(
+            f"This pass returned no research ({status.replace('_', ' ')}). "
+            "Every other section of this report comes from the document itself."
+        )
+        return
+
+    if research.get("query"):
+        doc.add_paragraph(f"Searched for: {research['query']}")
+    if research.get("summary"):
+        for para in str(research["summary"]).split("\n\n"):
+            if para.strip():
+                doc.add_paragraph(para.strip())
+
+    sources = research.get("sources") or []
+    if not sources:
+        doc.add_paragraph(
+            "This pass returned no sources, so nothing above can be traced to a "
+            "page. Treat it as a lead to check, not as evidence."
+        )
+        return
+    doc.add_heading("Sources", level=2)
+    for source in sources:
+        para = doc.add_paragraph(style="List Bullet")
+        para.add_run(str(source.get("title") or source.get("url") or "")).bold = True
+        site = str(source.get("site") or "")
+        para.add_run(f" — {site}" if site else "")
+        doc.add_paragraph(str(source.get("url") or ""))
 
 
 def _evaluation(doc, analysis: Analysis) -> None:

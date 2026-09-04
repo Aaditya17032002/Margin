@@ -71,6 +71,7 @@ def _to_response(a: Analysis, *, with_pages: bool = True) -> dict:
         "amendments": a.amendments or [],
         "pages": (a.pages or []) if with_pages else [],
         "versions": a.versions or [],
+        "research": a.research or {},
     }
 
 
@@ -297,6 +298,8 @@ async def duplicate_analysis(analysis_id: str, user: CurrentUser, db: DbSession)
         amendments=list(source.amendments or []),
         pages=list(source.pages or []),
         versions=[],
+        # A duplicate has not been read yet, so it has done no research either.
+        research={},
     )
     db.add(copy)
     await db.flush()

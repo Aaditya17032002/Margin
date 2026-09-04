@@ -58,6 +58,20 @@ def _analysis(**overrides):
         eligibility=[],
         pricing=[],
         post_award=[],
+        research={
+            "status": "completed",
+            "detail": "",
+            "query": "Current public procurement rules for NYC DOT",
+            "summary": "City procurement follows the PPB Rules.",
+            "sources": [
+                {
+                    "url": "https://www.nyc.gov/site/mocs/rules/ppb-rules.page",
+                    "title": "Procurement Policy Board Rules",
+                    "site": "nyc.gov",
+                }
+            ],
+            "at": "2026-06-01T00:00:00+00:00",
+        },
     )
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -140,3 +154,37 @@ def test_pdf_without_libreoffice_fails_loudly_rather_than_renaming(tmp_path, mon
     report = SimpleNamespace(id="x_pdf", template_name="Brief", format="PDF")
     with pytest.raises(RuntimeError, match="LibreOffice"):
         render(str(tmp_path), report, _analysis(), [], [])
+
+
+def test_web_research_is_reported_under_its_own_heading_with_its_sources(tmp_path):
+    """A claim from the open web must never read as a clause in the document."""
+    path = _render_to(tmp_path, _analysis())
+    document = docx.Document(path)
+    assert "External research" in _headings(path)
+    text = "\n".join(p.text for p in document.paragraphs)
+    assert "read on the open web, not in the solicitation" in text.lower()
+    assert "Procurement Policy Board Rules" in text
+    assert "https://www.nyc.gov/site/mocs/rules/ppb-rules.page" in text
+    assert "nyc.gov" in text
+
+
+def test_a_research_pass_that_returned_nothing_says_so(tmp_path):
+    analysis = _analysis(
+        research={"status": "rate_limited", "detail": "exceeded rate limit", "query": "", "summary": "", "sources": []}
+    )
+    path = _render_to(tmp_path, analysis)
+    text = "\n".join(p.text for p in docx.Document(path).paragraphs)
+    assert "returned no research (rate limited)" in text
+
+
+def test_a_run_that_never_searched_the_web_has_no_research_section(tmp_path):
+    path = _render_to(tmp_path, _analysis(research={}))
+    assert "External research" not in _headings(path)
+
+
+def test_markdown_links_every_source(tmp_path):
+    report = SimpleNamespace(id="x_md2", template_name="Brief", format="MD")
+    path = render(str(tmp_path), report, _analysis(), [], [])
+    text = open(path, encoding="utf-8").read()
+    assert "## External research" in text
+    assert "[Procurement Policy Board Rules](https://www.nyc.gov/site/mocs/rules/ppb-rules.page)" in text

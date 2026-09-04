@@ -11,6 +11,7 @@ from app.schemas.common import (
     DocType,
     DocumentPage,
     EvaluationFactor,
+    ExternalResearch,
     Finding,
     Gate,
     GoNoGo,
@@ -104,6 +105,9 @@ class AnalysisResponse(CamelModel):
     amendments: list[AmendmentRecord]
     pages: list[DocumentPage]
     versions: list[VersionRecord]
+    #: Only a deep-research pass fills this in; every other mode leaves it at
+    #: its "not_requested" default.
+    research: ExternalResearch = ExternalResearch()
 
 
 class AnalysisListItem(AnalysisResponse):

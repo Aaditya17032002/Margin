@@ -230,6 +230,33 @@ class VersionRecord(CamelModel):
     note: str
 
 
+class ResearchSource(CamelModel):
+    """One page a deep-research pass actually read."""
+
+    url: str
+    title: str = ""
+    #: The host, shown next to the title. Whose site a claim came from is most
+    #: of what tells a reader how much to trust it.
+    site: str = ""
+
+
+class ExternalResearch(CamelModel):
+    """What the open web said, kept separate from what the document says.
+
+    A claim in here is never a citation: it has no page, no clause, and no
+    standing against the solicitation. The workspace shows it under its own
+    heading with its sources attached, so the distinction survives contact
+    with a reader in a hurry.
+    """
+
+    status: str = "not_requested"  # completed | rate_limited | timeout | skipped | failed | not_requested
+    detail: str = ""
+    query: str = ""
+    summary: str = ""
+    sources: list[ResearchSource] = []
+    at: str | None = None
+
+
 class FileNode(CamelModel):
     id: str
     name: str

@@ -122,6 +122,7 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
             # imply research happened. The note travels on the summary and the
             # version entry, which is where a reviewer looks weeks later.
             research = orchestration.get("research") or {}
+            analysis.research = research
             research_note = _research_note(research)
             if research_note:
                 analysis.summary = f"{analysis.summary} {research_note}"
