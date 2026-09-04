@@ -109,6 +109,14 @@ class Citation(CamelModel):
     section: str
     quote: str
     bbox: BBox
+    #: The line range on that page the quote was resolved to, when it was
+    #: resolved at all. The workspace highlights exactly these lines instead of
+    #: guessing which ones the quote covers.
+    lines: list[int] | None = None
+    #: False when the quote could not be found in the extract. A reader is told
+    #: rather than being scrolled to an arbitrary line and left to wonder.
+    located: bool = False
+    match_score: float = 0.0
 
 
 class Finding(CamelModel):
@@ -163,8 +171,24 @@ class KeyDate(CamelModel):
     label: str
     at: str
     timezone: str
-    kind: Literal["questions-due", "proposal-due", "site-visit", "award", "amendment", "start"]
+    kind: Literal[
+        "intent-due",
+        "questions-due",
+        "answers-expected",
+        "site-visit",
+        "solution-review",
+        "draft-review",
+        "final-review",
+        "proposal-due",
+        "orals",
+        "award",
+        "start",
+        "amendment",
+    ]
     citation: Citation | None = None
+    #: "document" when the solicitation stated this date, "derived" when Margin
+    #: placed it around one that was stated. A reader must be able to tell.
+    source: Literal["document", "derived"] = "document"
 
 
 class Clin(CamelModel):

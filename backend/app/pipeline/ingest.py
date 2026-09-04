@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from app.core.logging import get_logger
 from app.providers.base import ChunkResult, LayoutResult
+from app.pipeline.extract import pages_from_text
+from app.pipeline.layout import LayoutExtractor
 from app.providers.factory import get_docintel_provider, get_llm_provider
 
 logger = get_logger()
@@ -29,5 +31,19 @@ async def embed_chunks(chunks: list[ChunkResult]) -> list[list[float]]:
 async def full_pipeline(content: bytes, filename: str) -> tuple[LayoutResult, list[list[float]]]:
     """Run the complete ingest → layout → chunk → embed pipeline."""
     layout = await ingest_document(content, filename)
+    embeddings = await embed_chunks(layout.chunks)
+    return layout, embeddings
+
+
+async def full_pipeline_from_text(
+    raw_text: str, filename: str
+) -> tuple[LayoutResult, list[list[float]]]:
+    """The same pipeline for text that was extracted at upload time.
+
+    Re-encoding stored text and handing it back to the PDF parser under its
+    original filename only produced a confusing "invalid pdf header" warning on
+    every run — the bytes stopped being a PDF the moment they were extracted.
+    """
+    layout = LayoutExtractor().extract_from_pages(pages_from_text(raw_text), filename, raw_text=raw_text)
     embeddings = await embed_chunks(layout.chunks)
     return layout, embeddings

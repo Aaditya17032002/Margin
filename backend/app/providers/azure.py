@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 import re
 import uuid
 from typing import Any
@@ -12,7 +13,9 @@ import httpx
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.pipeline.extract import extract_text
+from app.pipeline.anchor import CitationAnchor, resolve_citation
+from app.workers.schedule import KINDS
+from app.pipeline.extract import extract_pages
 from app.pipeline.layout import LayoutExtractor
 from app.providers.base import (
     AgentProvider,
@@ -28,6 +31,8 @@ from app.providers.base import (
 )
 
 logger = get_logger()
+
+SCHEDULE_KINDS = KINDS
 
 _JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
@@ -61,6 +66,13 @@ SPECIALIST_INSTRUCTIONS: dict[str, str] = {
     ),
     "pricing": (
         "Extract pricing instructions, CLIN structure, option years, and cost/price evaluation rules."
+    ),
+    "dates": (
+        "Extract every date and deadline the solicitation states: notice of intent, "
+        "written questions deadline, when answers are expected, site visits or "
+        "pre-proposal conferences, the submission deadline, oral presentations or "
+        "demonstrations, anticipated award, and the start of performance. Convert "
+        "each to a calendar date. Do not infer a date the document does not give."
     ),
     "qa": (
         "Draft clarifying questions for silence, contradictions, or ambiguities in the solicitation. "
@@ -107,14 +119,53 @@ def _excerpt(chunks: list[ChunkResult], limit: int = 70_000) -> str:
     return "\n".join(parts) if parts else ""
 
 
+def _ground(
+    anchor: CitationAnchor | None,
+    quote: str,
+    claimed: dict,
+    fallback_chunk: ChunkResult | None,
+) -> dict:
+    """Turn what a model said about a citation into where the clause actually is."""
+    fallback = (
+        {
+            "page": fallback_chunk.page,
+            "section": fallback_chunk.section_path,
+            "bbox": fallback_chunk.bbox,
+        }
+        if fallback_chunk
+        else None
+    )
+    claimed_page = claimed.get("page")
+    resolved = (
+        resolve_citation(
+            anchor,
+            quote,
+            claimed_page=int(claimed_page) if isinstance(claimed_page, (int, float, str)) and str(claimed_page).isdigit() else None,
+            claimed_section=str(claimed.get("section") or ""),
+            fallback=fallback,
+        )
+        if anchor is not None
+        else {
+            "page": int(fallback["page"]) if fallback else 1,
+            "section": str(claimed.get("section") or (fallback["section"] if fallback else "")),
+            "quote": quote,
+            "bbox": (fallback["bbox"] if fallback else {"x": 0.06, "y": 0.04, "w": 0.88, "h": 0.05}),
+            "lines": None,
+            "located": False,
+            "matchScore": 0.0,
+        }
+    )
+    return {"id": f"c_{uuid.uuid4().hex[:8]}", **resolved}
+
+
 class LocalLayoutProvider(DocIntelProvider):
     """Layout from extracted text when Document Intelligence is not configured."""
 
     async def extract_layout(self, content: bytes, filename: str) -> LayoutResult:
-        text = extract_text(content, filename)
-        if not text.strip():
-            text = content.decode("utf-8", errors="replace")
-        return LayoutExtractor().extract_from_text(text, filename)
+        pages = extract_pages(content, filename)
+        if not any(page.strip() for page in pages):
+            pages = [content.decode("utf-8", errors="replace")]
+        return LayoutExtractor().extract_from_pages(pages, filename)
 
 
 class AzureDocIntelProvider(DocIntelProvider):
@@ -285,10 +336,16 @@ class AzureAgentProvider(AgentProvider):
             agent_id, "Extract grounded findings from the solicitation text."
         )
         excerpt = _excerpt(chunks)
-        if agent_id == "qa":
-            findings = await self._extract_questions(instruction, excerpt)
+        # Citations are resolved against the document, not accepted from the
+        # model. Without an anchor the extractor still runs, it just cannot
+        # claim any of its citations are located.
+        anchor: CitationAnchor | None = kwargs.get("anchor")
+        if agent_id == "dates":
+            findings = await self._extract_dates(instruction, excerpt, chunks, anchor)
+        elif agent_id == "qa":
+            findings = await self._extract_questions(instruction, excerpt, chunks, anchor)
         else:
-            findings = await self._extract_findings(agent_id, instruction, excerpt, chunks)
+            findings = await self._extract_findings(agent_id, instruction, excerpt, chunks, anchor)
 
         for finding in findings:
             events.append({"event": "finding_emitted", "agent": agent_id, "finding": finding})
@@ -296,14 +353,24 @@ class AzureAgentProvider(AgentProvider):
         return AgentResult(findings=findings, events=events)
 
     async def _extract_findings(
-        self, agent_id: str, instruction: str, excerpt: str, chunks: list[ChunkResult]
+        self,
+        agent_id: str,
+        instruction: str,
+        excerpt: str,
+        chunks: list[ChunkResult],
+        anchor: CitationAnchor | None = None,
     ) -> list[dict]:
         prompt = (
             "You are a government-capture analyst. Return JSON only.\n"
             f"Task: {instruction}\n"
             "Rules:\n"
             "- Use only the document excerpt. If a field is not in the text, omit it or mark value as SILENT.\n"
-            "- Each finding needs a short verbatim quote from the excerpt.\n"
+            "- citation.quote must be copied character for character from the excerpt. "
+            "Do not paraphrase, join sentences, or fix typos — a quote that is not in the "
+            "text is discarded and the finding loses its source.\n"
+            "- Quote 1-3 whole sentences: enough to be unique in the document.\n"
+            "- citation.page and citation.section must be the [p.N section] marker "
+            "immediately above the quoted text.\n"
             "- stakes must be one of: informational, scored, disqualifying.\n"
             "- confidence is 0-1.\n"
             'Schema: {"findings":[{"label":str,"value":str,"detail":str,"confidence":number,'
@@ -327,7 +394,8 @@ class AzureAgentProvider(AgentProvider):
             if not isinstance(item, dict):
                 continue
             citation_in = item.get("citation") if isinstance(item.get("citation"), dict) else {}
-            quote = str(citation_in.get("quote") or item.get("value") or "")[:240]
+            quote = str(citation_in.get("quote") or item.get("value") or "")[:400]
+            citation = _ground(anchor, quote, citation_in, fallback_chunk)
             findings.append(
                 {
                     "id": f"f_{uuid.uuid4().hex[:8]}",
@@ -336,21 +404,85 @@ class AzureAgentProvider(AgentProvider):
                     "detail": (str(item.get("detail")) if item.get("detail") else None),
                     "confidence": _clamp_conf(item.get("confidence")),
                     "stakes": _stakes(item.get("stakes")),
-                    "citation": {
-                        "id": f"c_{uuid.uuid4().hex[:8]}",
-                        "page": int(citation_in.get("page") or (fallback_chunk.page if fallback_chunk else 1)),
-                        "section": str(citation_in.get("section") or (fallback_chunk.section_path if fallback_chunk else "")),
-                        "quote": quote,
-                        "bbox": (fallback_chunk.bbox if fallback_chunk else {"x": 0.05, "y": 0.1, "w": 0.9, "h": 0.06}),
-                    },
+                    "citation": citation,
                     "verified": None,
                     "flagged": False,
                 }
             )
-        logger.info("azure_specialist_complete", agent=agent_id, findings=len(findings))
+        located = sum(1 for f in findings if f["citation"].get("located"))
+        logger.info(
+            "azure_specialist_complete",
+            agent=agent_id,
+            findings=len(findings),
+            located=located,
+            unlocated=len(findings) - located,
+        )
         return findings
 
-    async def _extract_questions(self, instruction: str, excerpt: str) -> list[dict]:
+    async def _extract_dates(
+        self,
+        instruction: str,
+        excerpt: str,
+        chunks: list[ChunkResult],
+        anchor: CitationAnchor | None = None,
+    ) -> list[dict]:
+        """Dates get their own pass because they need a different answer shape:
+        a calendar date, not a sentence. Asking the identity agent for "due date
+        if stated" produced prose that no calendar could read."""
+        prompt = (
+            f"{instruction}\n"
+            "Return JSON only: "
+            '{"dates":[{"label":str,"kind":str,"at":"YYYY-MM-DDTHH:MM:SS",'
+            '"timezone":str,"citation":{"page":int,"section":str,"quote":str}}]}\n'
+            "Rules:\n"
+            "- kind is one of: " + ", ".join(SCHEDULE_KINDS) + ".\n"
+            "- `at` must be a real calendar date. If the document gives a date with no "
+            "time, use 00:00:00. If it gives no date at all for a stage, omit that stage "
+            "entirely — never estimate one.\n"
+            "- timezone is the one the document names (e.g. 'America/New_York'), else 'UTC'.\n"
+            "- citation.quote must be copied character for character from the excerpt.\n"
+            f"Excerpt:\n{excerpt[:70000]}"
+        )
+        text = await self._llm_provider().complete(
+            [
+                {"role": "system", "content": "You extract solicitation dates as JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            model="extract",
+            json=True,
+            max_tokens=2000,
+        )
+        data = _parse_json_object(text)
+        items = data.get("dates") if isinstance(data.get("dates"), list) else []
+        dates = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            citation_in = item.get("citation") if isinstance(item.get("citation"), dict) else {}
+            dates.append(
+                {
+                    "label": str(item.get("label") or "")[:200],
+                    "kind": str(item.get("kind") or ""),
+                    "at": str(item.get("at") or ""),
+                    "timezone": str(item.get("timezone") or "UTC")[:40],
+                    "citation": _ground(
+                        anchor,
+                        str(citation_in.get("quote") or "")[:400],
+                        citation_in,
+                        chunks[0] if chunks else None,
+                    ),
+                }
+            )
+        logger.info("azure_specialist_complete", agent="dates", findings=len(dates))
+        return dates
+
+    async def _extract_questions(
+        self,
+        instruction: str,
+        excerpt: str,
+        chunks: list[ChunkResult],
+        anchor: CitationAnchor | None = None,
+    ) -> list[dict]:
         prompt = (
             f"{instruction}\n"
             "Return JSON only: "
@@ -387,13 +519,12 @@ class AzureAgentProvider(AgentProvider):
                     "goNoGoImpact": bool(item.get("goNoGoImpact")),
                     "order": index,
                     "sent": False,
-                    "citation": {
-                        "id": f"c_{uuid.uuid4().hex[:8]}",
-                        "page": int(citation_in.get("page") or 1),
-                        "section": str(citation_in.get("section") or ""),
-                        "quote": str(citation_in.get("quote") or "")[:240],
-                        "bbox": {"x": 0.05, "y": 0.2, "w": 0.9, "h": 0.06},
-                    },
+                    "citation": _ground(
+                        anchor,
+                        str(citation_in.get("quote") or "")[:400],
+                        citation_in,
+                        chunks[0] if chunks else None,
+                    ),
                 }
             )
         return [q for q in questions if q["text"]]
@@ -444,6 +575,8 @@ class AzureResearchProvider(ResearchProvider):
         api_version: str = "2025-01-01-preview",
         poll_seconds: float = 8.0,
         max_wait_seconds: float = 900.0,
+        max_attempts: int = 3,
+        retry_base_seconds: float = 20.0,
     ):
         self.endpoint = endpoint.rstrip("/") if endpoint else ""
         self.api_key = api_key
@@ -452,6 +585,8 @@ class AzureResearchProvider(ResearchProvider):
         self.api_version = api_version
         self.poll_seconds = poll_seconds
         self.max_wait_seconds = max_wait_seconds
+        self.max_attempts = max(1, max_attempts)
+        self.retry_base_seconds = retry_base_seconds
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=20.0))
 
     def _responses_url(self, response_id: str | None = None) -> str:
@@ -461,10 +596,43 @@ class AzureResearchProvider(ResearchProvider):
         return base
 
     async def research(self, query: str) -> ResearchResult:
+        """Run one deep-research pass, retrying the whole job through a rate limit.
+
+        The deployment is a shared, capacity-limited resource, and a rejection
+        arrives two ways: a 429 on the request, or — more often — an accepted
+        background job that comes back ``failed`` with ``rate_limit_exceeded``
+        minutes later. Both are the same thing and both are worth waiting out,
+        because the alternative is a deep-research run that silently produces
+        no research at all.
+        """
         if not self.endpoint or not self.api_key:
             logger.info("deep_research_skipped", reason="missing_endpoint")
-            return ResearchResult(findings=[], sources=[], query_used=query)
+            return ResearchResult(
+                findings=[], sources=[], query_used=query,
+                status="skipped", detail="Deep research is not configured for this workspace.",
+            )
 
+        last = ResearchResult(query_used=query, status="failed", detail="No attempt completed.")
+        for attempt in range(1, self.max_attempts + 1):
+            outcome = await self._attempt(query, attempt)
+            if outcome.status == "completed" or outcome.status not in RETRYABLE_RESEARCH_STATUSES:
+                return outcome
+            last = outcome
+            if attempt < self.max_attempts:
+                delay = outcome_retry_delay(outcome, self.retry_base_seconds, attempt)
+                logger.warning(
+                    "deep_research_retrying",
+                    attempt=attempt,
+                    of=self.max_attempts,
+                    status=outcome.status,
+                    sleep_s=round(delay),
+                )
+                await asyncio.sleep(delay)
+
+        logger.error("deep_research_exhausted", attempts=self.max_attempts, status=last.status)
+        return last
+
+    async def _attempt(self, query: str, attempt: int) -> ResearchResult:
         headers = {"api-key": self.api_key, "Content-Type": "application/json"}
         payload = {
             "model": self.deployment,
@@ -472,32 +640,77 @@ class AzureResearchProvider(ResearchProvider):
             "tools": [{"type": "web_search_preview"}],
             "input": query,
         }
-        created = await self._client.post(self._responses_url(), headers=headers, json=payload)
+        try:
+            created = await self._client.post(self._responses_url(), headers=headers, json=payload)
+        except httpx.HTTPError as exc:
+            logger.warning("deep_research_create_error", attempt=attempt, error=str(exc))
+            return ResearchResult(query_used=query, status="failed", detail=str(exc)[:300])
+
+        if created.status_code == 429:
+            retry_after = _retry_after(created.headers)
+            logger.warning("deep_research_rate_limited", attempt=attempt, retry_after=retry_after)
+            return ResearchResult(
+                query_used=query,
+                status="rate_limited",
+                detail=f"retry-after={retry_after}" if retry_after else "429 on create",
+            )
         if created.status_code >= 400:
-            logger.error("deep_research_create_failed", status=created.status_code, body=created.text[:800])
-            created.raise_for_status()
+            logger.error(
+                "deep_research_create_failed",
+                attempt=attempt,
+                status=created.status_code,
+                body=created.text[:800],
+            )
+            # 5xx is the service having a bad minute; 4xx is our request.
+            status = "failed" if created.status_code < 500 else "rate_limited"
+            return ResearchResult(query_used=query, status=status, detail=created.text[:300])
+
         body = created.json()
         response_id = body.get("id")
         status = body.get("status") or "queued"
-        logger.info("deep_research_started", response_id=response_id, status=status)
+        logger.info("deep_research_started", response_id=response_id, status=status, attempt=attempt)
 
         elapsed = 0.0
         while status in {"queued", "in_progress", "incomplete"}:
             if elapsed >= self.max_wait_seconds:
-                raise TimeoutError(f"o3-deep-research timed out after {self.max_wait_seconds}s ({response_id})")
+                logger.error("deep_research_timeout", response_id=response_id, waited_s=int(elapsed))
+                return ResearchResult(
+                    query_used=query,
+                    status="timeout",
+                    detail=f"No answer after {int(self.max_wait_seconds)}s.",
+                )
             await asyncio.sleep(self.poll_seconds)
             elapsed += self.poll_seconds
-            polled = await self._client.get(self._responses_url(response_id), headers=headers)
+            try:
+                polled = await self._client.get(self._responses_url(response_id), headers=headers)
+            except httpx.HTTPError as exc:
+                logger.warning("deep_research_poll_error", response_id=response_id, error=str(exc))
+                continue
             if polled.status_code >= 400:
-                logger.error("deep_research_poll_failed", status=polled.status_code, body=polled.text[:800])
-                polled.raise_for_status()
+                logger.error(
+                    "deep_research_poll_failed", status=polled.status_code, body=polled.text[:800]
+                )
+                return ResearchResult(query_used=query, status="failed", detail=polled.text[:300])
             body = polled.json()
             status = body.get("status") or status
             logger.info("deep_research_poll", response_id=response_id, status=status, elapsed_s=int(elapsed))
 
         if status != "completed":
-            logger.error("deep_research_failed", response_id=response_id, status=status, body=str(body)[:800])
-            return ResearchResult(findings=[], sources=[], query_used=query)
+            error = body.get("error") if isinstance(body.get("error"), dict) else {}
+            code = str(error.get("code") or "")
+            message = str(error.get("message") or "")[:300]
+            logger.error(
+                "deep_research_failed",
+                response_id=response_id,
+                status=status,
+                code=code,
+                message=message,
+            )
+            return ResearchResult(
+                query_used=query,
+                status="rate_limited" if code in RETRYABLE_ERROR_CODES else "failed",
+                detail=message or code or status,
+            )
 
         text, sources = _parse_responses_output(body)
         findings = []
@@ -511,7 +724,40 @@ class AzureResearchProvider(ResearchProvider):
                 }
             )
         logger.info("deep_research_complete", response_id=response_id, sources=len(sources), chars=len(text))
-        return ResearchResult(findings=findings, sources=sources, query_used=query)
+        return ResearchResult(findings=findings, sources=sources, query_used=query, status="completed")
+
+
+RETRYABLE_RESEARCH_STATUSES = {"rate_limited"}
+RETRYABLE_ERROR_CODES = {"rate_limit_exceeded", "server_error", "service_unavailable"}
+
+
+def _retry_after(headers: Any) -> float | None:
+    for key in ("retry-after", "x-ratelimit-reset-requests", "retry-after-ms"):
+        raw = headers.get(key)
+        if not raw:
+            continue
+        try:
+            value = float(str(raw).rstrip("smSM"))
+        except ValueError:
+            continue
+        return value / 1000 if key.endswith("-ms") else value
+    return None
+
+
+def outcome_retry_delay(outcome: ResearchResult, base: float, attempt: int) -> float:
+    """How long to wait before trying the deployment again.
+
+    Honours a Retry-After the service gave us; otherwise backs off
+    exponentially with jitter, so several analyses queued at once do not all
+    come back and collide on the same second.
+    """
+    detail = outcome.detail or ""
+    if detail.startswith("retry-after="):
+        try:
+            return max(1.0, min(300.0, float(detail.split("=", 1)[1])))
+        except ValueError:
+            pass
+    return min(300.0, base * (2 ** (attempt - 1))) * (0.8 + random.random() * 0.4)
 
 
 def _parse_responses_output(body: dict[str, Any]) -> tuple[str, list[dict]]:

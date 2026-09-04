@@ -67,6 +67,17 @@ export function ReportsView() {
   const destinationBlocked =
     (destination === "onedrive" && !oneDrive?.connected) || (destination === "outlook" && !outlook?.connected);
 
+  /** Saving is a fetch, not a navigation — the endpoint needs the bearer token. */
+  async function download(id: string, name: string, fmt: ExportRecord["format"]) {
+    try {
+      await reportsApi.download(id, `${name}.${fmt.toLowerCase()}`);
+    } catch (error) {
+      notify.error("That report could not be downloaded.", {
+        description: error instanceof Error ? error.message : "Generate it again.",
+      });
+    }
+  }
+
   /** The worker renders the document, so the wait here is the real one. */
   async function generate() {
     if (!analysis || !template || progress !== null) return;
@@ -115,7 +126,7 @@ export function ReportsView() {
         finished?.status === "ready"
           ? {
               label: "Download",
-              onClick: () => window.open(reportsApi.downloadUrl(id), "_blank", "noopener"),
+              onClick: () => void download(id, `${analysis.solicitationNumber} — ${template.name}`, format),
             }
           : undefined,
     });
@@ -338,7 +349,13 @@ export function ReportsView() {
                               size="iconSm"
                               aria-label={`Download ${record.analysisTitle}`}
                               disabled={record.status !== "ready"}
-                              onClick={() => window.open(reportsApi.downloadUrl(record.id), "_blank", "noopener")}
+                              onClick={() =>
+                                void download(
+                                  record.id,
+                                  `${record.analysisTitle} — ${record.templateName}`,
+                                  record.format,
+                                )
+                              }
                             >
                               <Download />
                             </Button>

@@ -24,18 +24,30 @@ const KIND_COPY: Record<
   DeadlineRow["kind"],
   { label: string; tone: "seal" | "ochre" | "leaf" | "slate" | "neutral" | "patina" }
 > = {
+  "intent-due": { label: "Intent", tone: "slate" },
   "questions-due": { label: "Questions due", tone: "ochre" },
-  "proposal-due": { label: "Proposal due", tone: "seal" },
+  "answers-expected": { label: "Answers", tone: "slate" },
   "site-visit": { label: "Site visit", tone: "slate" },
+  "solution-review": { label: "Solution review", tone: "patina" },
+  "draft-review": { label: "Draft review", tone: "patina" },
+  "final-review": { label: "Production", tone: "ochre" },
+  "proposal-due": { label: "Proposal due", tone: "seal" },
+  orals: { label: "Orals", tone: "patina" },
   award: { label: "Award", tone: "leaf" },
   amendment: { label: "Amendment", tone: "neutral" },
   start: { label: "Period of performance", tone: "patina" },
 };
 
 const MARKER_TONE: Record<DeadlineRow["kind"], "seal" | "ochre" | "leaf" | "slate"> = {
+  "intent-due": "slate",
   "questions-due": "ochre",
-  "proposal-due": "seal",
+  "answers-expected": "slate",
   "site-visit": "slate",
+  "solution-review": "leaf",
+  "draft-review": "leaf",
+  "final-review": "ochre",
+  "proposal-due": "seal",
+  orals: "leaf",
   award: "leaf",
   amendment: "slate",
   start: "leaf",
@@ -86,6 +98,15 @@ export function DeadlinesView() {
     return [...map.entries()];
   }, [listed]);
 
+  // A stage nothing in the portfolio uses is not worth a legend row.
+  const presentKinds = React.useMemo(
+    () =>
+      (Object.keys(KIND_COPY) as DeadlineRow["kind"][]).filter((k) =>
+        all.some((d) => d.kind === k),
+      ),
+    [all],
+  );
+
   const nextCritical = all.find((row) => urgency(row.at, now) === "critical" && row.kind === "proposal-due");
 
   return (
@@ -93,7 +114,7 @@ export function DeadlinesView() {
       <PageHeader
         eyebrow="Calendar"
         title="Deadlines"
-        description="Every date the documents named, in the time zone the agency wrote it in."
+        description="Every date the documents named, plus the stages Margin plans around them — in the time zone the agency wrote it in."
         actions={
           <Button
             variant="secondary"
@@ -147,7 +168,7 @@ export function DeadlinesView() {
           <Panel className="p-4">
             <p className="eyebrow mb-3">Legend</p>
             <ul className="space-y-2">
-              {(Object.keys(KIND_COPY) as DeadlineRow["kind"][]).map((k) => (
+              {presentKinds.map((k) => (
                 <li key={k}>
                   <button
                     type="button"
@@ -249,11 +270,20 @@ function DeadlineRowItem({ row, now }: { row: DeadlineRow; now: number }) {
       className={cn(
         "flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-5 py-4",
         state === "past" && "opacity-60",
+        // A planned stage is a lighter mark on the page than a stated deadline.
+        row.source === "derived" && "border-l-2 border-dashed border-line-strong",
       )}
     >
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={copy.tone}>{copy.label}</Badge>
+          {row.source === "derived" ? (
+            // Margin placed this stage around a date the document did state.
+            // Saying so is the difference between a plan and a claim.
+            <span className="font-mono text-2xs uppercase tracking-[0.1em] text-ink-faint">
+              planned
+            </span>
+          ) : null}
           <span className="font-mono text-2xs text-ink-faint">{row.solicitationNumber}</span>
         </div>
         <Link

@@ -169,6 +169,10 @@ class Settings(BaseSettings):
     AZURE_DEEP_RESEARCH_DEPLOYMENT: str = "o3-deep-research"
     AZURE_DEEP_RESEARCH_REGION: str = "norwayeast"
     AZURE_DEEP_RESEARCH_API_VERSION: str = "2025-01-01-preview"
+    #: The deployment is capacity-limited and a rejection often arrives as a
+    #: background job that fails minutes later, so the whole job is retried.
+    AZURE_DEEP_RESEARCH_MAX_ATTEMPTS: int = 3
+    AZURE_DEEP_RESEARCH_RETRY_SECONDS: float = 30.0
 
     AZURE_DOCINTEL_ENDPOINT: str = ""
     AZURE_DOCINTEL_KEY: str = ""

@@ -6,12 +6,26 @@ import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown } from "l
 import { cn } from "@/lib/utils";
 import { Button } from "./button";
 
-export function TableFrame({ className, children }: { className?: string; children: React.ReactNode }) {
+export function TableFrame({
+  className,
+  footer,
+  children,
+}: {
+  className?: string;
+  /**
+   * Pinned under the scroll region — pagination and row counts belong to the
+   * frame, not to the rows. Inside the scrolling area they slide out of reach
+   * exactly when a long result set makes them necessary.
+   */
+  footer?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
-    <div className={cn("flex flex-col overflow-hidden rounded-lg border border-line bg-paper-raised", className)}>
+    <div className={cn("flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-paper-raised", className)}>
       {/* Both axes scroll inside the frame: a wide table should not push the
           page sideways, and a long one should not carry the header away. */}
       <div className="scroll-region scroll-region-x min-h-0 flex-1">{children}</div>
+      {footer ? <div className="shrink-0 border-t border-line bg-paper-raised">{footer}</div> : null}
     </div>
   );
 }

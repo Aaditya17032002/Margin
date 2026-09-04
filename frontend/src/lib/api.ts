@@ -340,6 +340,20 @@ export const teamApi = {
 export const integrationsApi = {
   list: () => api<Integration[]>("/api/v1/integrations"),
 
+  /**
+   * Begin a real Microsoft consent round trip. Answers 501 when the deployment
+   * has no Microsoft credentials, which is the signal to fall back to marking
+   * the connection by hand.
+   */
+  authorize: (id: IntegrationId) =>
+    api<{ url: string; scopes: string[] }>(`/api/v1/integrations/${id}/authorize`, {
+      method: "POST",
+    }),
+
+  /** The workspace's drop box: post a document here and Margin reads it. */
+  ingestAddress: () =>
+    api<{ url: string; method: string; field: string; note: string }>("/api/v1/ingest/address"),
+
   connect: (id: IntegrationId, account?: string) =>
     api<Integration>(`/api/v1/integrations/${id}/connect`, { method: "POST", body: { account } }),
 
@@ -349,10 +363,10 @@ export const integrationsApi = {
   files: (id: IntegrationId) => api<FileNode[]>(`/api/v1/integrations/${id}/files`),
 
   import: (id: IntegrationId, fileIds: string[], analysisId?: string) =>
-    api<{ imported: number; analysisId: string | null }>(`/api/v1/integrations/${id}/import`, {
-      method: "POST",
-      body: { fileIds, analysisId },
-    }),
+    api<{ imported: number; results: { fileId: string; analysisId?: string; error?: string }[] }>(
+      `/api/v1/integrations/${id}/import`,
+      { method: "POST", body: { fileIds, analysisId } },
+    ),
 };
 
 export const templatesApi = {
@@ -392,7 +406,33 @@ export const reportsApi = {
     },
   ) => api<ExportRecord>(`/api/v1/analyses/${analysisId}/report`, { method: "POST", body: input }),
 
-  downloadUrl: (id: string) => url(`/api/v1/reports/${id}`),
+  /**
+   * Fetch the rendered file and hand it to the browser.
+   *
+   * Opening the URL in a new tab cannot work: the endpoint is authenticated
+   * with a bearer token held in this tab, and a plain navigation carries no
+   * Authorization header — so every download answered 401 and looked to a user
+   * like reports simply could not be downloaded. Fetching it here keeps the
+   * header, and the object URL does the saving.
+   */
+  download: async (id: string, filename: string) => {
+    const res = await fetch(url(`/api/v1/reports/${id}`), {
+      headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },
+    });
+    if (!res.ok) throw await parseError(res);
+
+    const blob = await res.blob();
+    const href = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    // Revoked on the next frame: Safari cancels a download whose blob URL is
+    // released in the same tick as the click.
+    requestAnimationFrame(() => URL.revokeObjectURL(href));
+  },
 };
 
 export const activityApi = {
