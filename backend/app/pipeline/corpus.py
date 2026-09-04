@@ -85,6 +85,23 @@ class Corpus:
     def chunk(self, index: int) -> CorpusChunk | None:
         return self.chunks[index] if 0 <= index < len(self.chunks) else None
 
+    @property
+    def full_text(self) -> str:
+        """Everything that was extracted, page by page.
+
+        Not the chunk texts. A page carrying only a heading — a volume title
+        page, a tab divider, a section break — produces no chunk at all, so a
+        presence check reading chunks would report that "Volume II" is missing
+        from a response that opens Volume II on its own page. Chunks are for
+        retrieval; this is for asking whether the package contains something.
+        """
+        return "\n".join(
+            line
+            for doc in self.documents
+            for page in doc.pages
+            for line in page.get("lines", [])
+        )
+
     def pages_for_anchor(self) -> list[dict]:
         """The shape ``CitationAnchor`` indexes: one entry per page of the
         package, carrying which document it belongs to."""

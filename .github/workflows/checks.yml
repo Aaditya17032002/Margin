@@ -38,6 +38,13 @@ jobs:
       # hold whatever the model says, and they need no credentials.
       - name: Response adjudication
         run: uv run python -m evals.adjudication.runner --gate --json ../adjudication.json
+
+      # The rules that decide compliance without a model. Gated for two things
+      # separately: a wrong verdict, and a rule firing on a requirement it has
+      # no business judging — enough of the second and people learn to ignore
+      # the mechanical layer entirely.
+      - name: Mechanical rules
+        run: uv run python -m evals.mechanical.runner --gate --json ../mechanical.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -45,6 +52,7 @@ jobs:
           path: |
             recall.json
             adjudication.json
+            mechanical.json
 
   frontend:
     runs-on: ubuntu-latest
