@@ -44,7 +44,14 @@ _DECIDER_WORDS = {
 
 
 def build(
-    *, analysis, requirements: list, checks: list, queue: list, questions: list | None = None
+    *,
+    analysis,
+    requirements: list,
+    checks: list,
+    queue: list,
+    questions: list | None = None,
+    reviews: list | None = None,
+    review_findings: list | None = None,
 ) -> list[Block]:
     blocks: list[Block] = []
     blocks.append(("heading", 1, "Evidence pack"))
@@ -69,6 +76,7 @@ def build(
     blocks += _requirements(requirements)
     blocks += _questions(questions or [])
     blocks += _response(analysis, checks, requirements)
+    blocks += _reviews(reviews or [], review_findings or [])
     blocks += _signoffs(checks, requirements)
     blocks += _open(queue)
     blocks += _unlocated(analysis)
@@ -314,6 +322,89 @@ def _response(analysis, checks: list, requirements: list) -> list[Block]:
             rows,
         )
     )
+    return blocks
+
+
+def _reviews(rounds: list, findings: list) -> list[Block]:
+    """The review rounds, their verdicts, and what they left open.
+
+    A round closed over its own unresolved must-fix findings is recorded as
+    exactly that. A pack that reported it as a clean pass would be the single
+    most misleading thing in this document — the point of an override is that
+    somebody decided to accept a known risk, and a record that hides the
+    decision hides the risk with it.
+    """
+    if not rounds:
+        return []
+
+    blocks: list[Block] = [("heading", 2, "Review rounds")]
+    rows = []
+    for round_row in rounds:
+        mine = [f for f in findings if f.round_id == round_row.id]
+        open_must = sum(1 for f in mine if f.severity == "must_fix" and f.state == "open")
+        rows.append(
+            [
+                round_row.colour.replace("_", " "),
+                f"draft {round_row.response_version}",
+                ", ".join(round_row.reviewers or []) or "—",
+                round_row.status,
+                (round_row.verdict or "—").replace("_", " "),
+                round_row.closed_by or "",
+                round_row.closed_at.isoformat(timespec="minutes") if round_row.closed_at else "",
+                f"{len(mine)} finding(s), {open_must} must-fix open",
+            ]
+        )
+    blocks.append(
+        (
+            "table",
+            ["Round", "Draft", "Reviewers", "State", "Verdict", "Signed by", "When", "Findings"],
+            rows,
+        )
+    )
+
+    overridden = [r for r in rounds if r.override_reason]
+    if overridden:
+        blocks.append(
+            (
+                "note",
+                "Closed over unresolved must-fix findings: "
+                + "; ".join(
+                    f"{r.colour.replace('_', ' ')} — {r.override_reason}" for r in overridden
+                )
+                + ". Somebody accepted a known risk, and this is the record of who and why.",
+            )
+        )
+
+    outstanding = [f for f in findings if f.state == "open"]
+    if outstanding:
+        blocks.append(("heading", 3, "Findings still open"))
+        blocks.append(
+            (
+                "table",
+                ["Severity", "Where", "Finding", "Raised by"],
+                [
+                    [f.severity.replace("_", " "), f.location or "—", f.text[:300], f.raised_by or ""]
+                    for f in sorted(
+                        outstanding,
+                        key=lambda f: {"must_fix": 0, "should_fix": 1, "consider": 2}.get(f.severity, 3),
+                    )
+                ],
+            )
+        )
+
+    rejected = [f for f in findings if f.state == "rejected"]
+    if rejected:
+        blocks.append(("heading", 3, "Findings considered and rejected"))
+        blocks.append(
+            (
+                "table",
+                ["Where", "Finding", "Why it was rejected", "By"],
+                [
+                    [f.location or "—", f.text[:300], (f.resolution or "")[:300], f.resolved_by or ""]
+                    for f in rejected
+                ],
+            )
+        )
     return blocks
 
 

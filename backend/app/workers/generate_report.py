@@ -155,8 +155,25 @@ async def _evidence_blocks(db, analysis: Analysis, rows: list[Requirement]) -> l
         .scalars()
         .all()
     )
+    from app.db.models.review import ReviewFinding, ReviewRound
+
+    rounds = list(
+        (await db.execute(select(ReviewRound).where(ReviewRound.analysis_id == analysis.id)))
+        .scalars()
+        .all()
+    )
+    review_findings = list(
+        (await db.execute(select(ReviewFinding).where(ReviewFinding.analysis_id == analysis.id)))
+        .scalars()
+        .all()
+    )
     queue = verification.build(
-        analysis=analysis, requirements=list(rows), checks=checks, questions=questions
+        analysis=analysis,
+        requirements=list(rows),
+        checks=checks,
+        questions=questions,
+        reviews=rounds,
+        review_findings=review_findings,
     )
     return evidence.build(
         analysis=analysis,
@@ -164,6 +181,8 @@ async def _evidence_blocks(db, analysis: Analysis, rows: list[Requirement]) -> l
         checks=checks,
         queue=queue,
         questions=questions,
+        reviews=rounds,
+        review_findings=review_findings,
     )
 
 

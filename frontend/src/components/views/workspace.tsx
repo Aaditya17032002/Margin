@@ -31,6 +31,7 @@ import { WORKSPACE_TABS, type WorkspaceTabId } from "@/components/workspace/tabs
 import { CoveragePanel } from "@/components/workspace/coverage";
 import { ResponseGapPanel } from "@/components/workspace/response-gap";
 import { VerificationPanel } from "@/components/workspace/verification";
+import { ReviewsPanel } from "@/components/workspace/reviews";
 import {
   AmendmentsPanel,
   ComplianceMatrix,
@@ -373,6 +374,7 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
                 ) : null}
                 {tab === "coverage" ? <CoveragePanel analysis={analysis} /> : null}
                 {tab === "response" ? <ResponseGapPanel analysis={analysis} /> : null}
+                {tab === "reviews" ? <ReviewsPanel analysis={analysis} /> : null}
                 {tab === "scope" ? (
                   <FindingsPanel
                     analysis={analysis}

@@ -16,6 +16,7 @@ from app.db.models.analysis import Analysis
 from app.db.models.question import Question
 from app.db.models.requirement import Requirement
 from app.db.models.response_check import ResponseCheck
+from app.db.models.review import ReviewFinding, ReviewRound
 from app.db.models.verdict import Verdict
 from app.pipeline import verdicts, verification
 
@@ -56,11 +57,20 @@ async def verification_queue(analysis_id: str, user: CurrentUser, db: DbSession)
         await db.execute(select(Question).where(Question.analysis_id == analysis_id))
     ).scalars().all()
 
+    rounds = (
+        await db.execute(select(ReviewRound).where(ReviewRound.analysis_id == analysis_id))
+    ).scalars().all()
+    findings = (
+        await db.execute(select(ReviewFinding).where(ReviewFinding.analysis_id == analysis_id))
+    ).scalars().all()
+
     items = verification.build(
         analysis=analysis,
         requirements=list(requirements),
         checks=list(checks),
         questions=list(questions),
+        reviews=list(rounds),
+        review_findings=list(findings),
     )
     return {"summary": verification.summarise(items), "items": [item.as_dict() for item in items]}
 

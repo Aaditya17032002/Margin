@@ -557,6 +557,67 @@ export interface VerificationCorpus {
   recent: VerdictRecord[];
 }
 
+/**
+ * The rounds a capture team runs before a proposal is sent.
+ *
+ * A round is opened against a *version* of the response — a Red Team on draft
+ * 2 says nothing about draft 4 — and it ends with a named person saying the
+ * bid can proceed.
+ */
+export type ReviewColour = "pink" | "red" | "gold" | "white_glove";
+export type ReviewVerdict = "proceed" | "proceed_with_fixes" | "do_not_proceed";
+export type FindingSeverity = "must_fix" | "should_fix" | "consider";
+export type FindingState = "open" | "fixed" | "accepted" | "rejected";
+
+export interface ReviewFinding {
+  id: string;
+  roundId: string;
+  analysisId: string;
+  requirementId?: string | null;
+  severity: FindingSeverity;
+  text: string;
+  location: string;
+  state: FindingState;
+  /** Required to reject: a finding closed without one gets raised again. */
+  resolution?: string | null;
+  raisedBy: string;
+  raisedAt?: string | null;
+  resolvedBy?: string | null;
+  resolvedAt?: string | null;
+}
+
+export interface ReviewRound {
+  id: string;
+  analysisId: string;
+  colour: ReviewColour;
+  responseVersion: number;
+  charter: string;
+  reviewers: string[];
+  status: "open" | "closed";
+  verdict?: ReviewVerdict | null;
+  note?: string | null;
+  /** Set when the round was closed over its own unresolved must-fix findings. */
+  overrideReason?: string | null;
+  openedBy: string;
+  openedAt?: string | null;
+  closedBy?: string | null;
+  closedAt?: string | null;
+  findings: ReviewFinding[];
+  openMustFix: number;
+  history?: { at: string; event: string; detail: string }[];
+}
+
+/** What a white-glove round has to verify by hand, because extracted text cannot. */
+export interface WhiteGloveItem {
+  checkId: string;
+  requirementId: string;
+  reference: string;
+  requirement: string;
+  rule: string;
+  whyNotChecked: string;
+  stakes: Stakes;
+}
+
 export interface QAQuestion {
   id: string;
   analysisId: string;

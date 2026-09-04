@@ -26,6 +26,11 @@ import type {
   Prefs,
   QAQuestion,
   ResponseCheck,
+  ReviewColour,
+  ReviewFinding,
+  ReviewRound,
+  ReviewVerdict,
+  FindingSeverity,
   Role,
   SessionUser,
   Template,
@@ -33,6 +38,7 @@ import type {
   AuditEntry,
   VerificationCorpus,
   VerificationQueue,
+  WhiteGloveItem,
   WorkItem,
 } from "@/types";
 
@@ -352,6 +358,63 @@ export const responseApi = {
       method: "PATCH",
       body: patch,
     }),
+};
+
+/* ------------------------------------------------------------------ */
+/* Colour-team reviews                                                  */
+/* ------------------------------------------------------------------ */
+
+export const reviewsApi = {
+  list: (analysisId: string) =>
+    api<{ charters: Record<ReviewColour, string>; rounds: ReviewRound[] }>(
+      `/api/v1/analyses/${analysisId}/reviews`,
+    ),
+
+  /** Opens against the currently bound draft. Refused when none is bound. */
+  open: (analysisId: string, body: { colour: ReviewColour; charter?: string; reviewers?: string[] }) =>
+    api<ReviewRound>(`/api/v1/analyses/${analysisId}/reviews`, { method: "POST", body }),
+
+  raise: (
+    analysisId: string,
+    roundId: string,
+    body: { text: string; severity?: FindingSeverity; location?: string; requirementId?: string },
+  ) =>
+    api<ReviewFinding>(`/api/v1/analyses/${analysisId}/reviews/${roundId}/findings`, {
+      method: "POST",
+      body,
+    }),
+
+  resolve: (
+    analysisId: string,
+    roundId: string,
+    findingId: string,
+    patch: Partial<Pick<ReviewFinding, "text" | "severity" | "location" | "state" | "resolution">>,
+  ) =>
+    api<ReviewFinding>(
+      `/api/v1/analyses/${analysisId}/reviews/${roundId}/findings/${findingId}`,
+      { method: "PATCH", body: patch },
+    ),
+
+  /**
+   * Sign the round off. Refused with 409 while must-fix findings are open,
+   * unless `overrideReason` is supplied — which is recorded as an override
+   * rather than as a pass.
+   */
+  close: (
+    analysisId: string,
+    roundId: string,
+    body: { verdict: ReviewVerdict; note?: string; overrideReason?: string },
+  ) =>
+    api<ReviewRound>(`/api/v1/analyses/${analysisId}/reviews/${roundId}/close`, {
+      method: "POST",
+      body,
+    }),
+
+  /** Everything the mechanical rules could not check from extracted text. */
+  checklist: (analysisId: string, roundId: string) =>
+    api<{ roundId: string; responseVersion: number; items: WhiteGloveItem[] }>(
+      `/api/v1/analyses/${analysisId}/reviews/${roundId}/checklist`,
+    ),
 };
 
 /* ------------------------------------------------------------------ */

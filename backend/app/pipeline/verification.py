@@ -77,6 +77,8 @@ def build(
     requirements: list,
     checks: list,
     questions: list | None = None,
+    reviews: list | None = None,
+    review_findings: list | None = None,
 ) -> list[QueueItem]:
     """Collect every open question across the analysis."""
     items: list[QueueItem] = []
@@ -87,6 +89,7 @@ def build(
     items += _requirements(requirements)
     items += _checks(checks, {r.id: r for r in requirements})
     items += _questions(questions or [], analysis)
+    items += _reviews(reviews or [], review_findings or [], analysis)
 
     items.sort(key=lambda item: (_ORDER.get(item.severity, 3), item.reference or item.title))
     return items
@@ -501,3 +504,77 @@ def _questions_due(analysis) -> datetime | None:
             continue
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     return None
+
+
+def _reviews(rounds: list, findings: list, analysis) -> list[QueueItem]:
+    """What the review rounds left open, and what they reviewed.
+
+    Two things belong in a worklist. A must-fix finding nobody has resolved is
+    the plainest kind of outstanding work there is. And a round that reviewed
+    an earlier draft has stopped saying anything about the one about to be
+    sent — a Red Team on draft 2 is not a Red Team on draft 4, and a closed
+    round quietly ageing out is exactly how a team believes it has been
+    reviewed when it has not.
+    """
+    if not rounds:
+        return []
+
+    items: list[QueueItem] = []
+    current = int((analysis.response or {}).get("version") or 0)
+    by_round = {r.id: r for r in rounds}
+
+    for finding in findings:
+        if finding.state != "open" or finding.severity != "must_fix":
+            continue
+        round_row = by_round.get(finding.round_id)
+        colour = (round_row.colour if round_row else "review").replace("_", " ")
+        items.append(
+            QueueItem(
+                id=f"review:finding:{finding.id}",
+                kind="review",
+                severity=BLOCKING,
+                title=f"{colour.title()} review must-fix: {finding.text[:90]}",
+                why=f"Raised by {finding.raised_by or 'a reviewer'} and not resolved.",
+                consequence="The round it belongs to cannot be signed off while it is open.",
+                tab="reviews",
+                reference=finding.location or "",
+                owner=finding.raised_by or None,
+                detail=finding.text[:200],
+            )
+        )
+
+    for round_row in rounds:
+        if round_row.status == "open":
+            open_findings = [
+                f for f in findings if f.round_id == round_row.id and f.state == "open"
+            ]
+            items.append(
+                QueueItem(
+                    id=f"review:open:{round_row.id}",
+                    kind="review",
+                    severity=ROUTINE,
+                    title=f"{round_row.colour.replace('_', ' ').title()} review is still open",
+                    why=f"{len(open_findings)} finding(s) unresolved; nobody has signed it off.",
+                    consequence="An unsigned round is not a review that happened.",
+                    tab="reviews",
+                )
+            )
+        elif current and round_row.response_version and round_row.response_version < current:
+            items.append(
+                QueueItem(
+                    id=f"review:stale:{round_row.id}",
+                    kind="review",
+                    severity=IMPORTANT,
+                    title=(
+                        f"The {round_row.colour.replace('_', ' ')} review covered draft "
+                        f"{round_row.response_version}, and the current draft is {current}"
+                    ),
+                    why="A round says something about the draft it read and nothing about a later one.",
+                    consequence=(
+                        "The team believes this has been reviewed. What has been reviewed is a "
+                        "version that is no longer being sent."
+                    ),
+                    tab="reviews",
+                )
+            )
+    return items

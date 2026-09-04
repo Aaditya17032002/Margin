@@ -88,6 +88,45 @@ class MatrixRowResponse(CamelModel):
     history: list[dict] = []
 
 
+# ── Colour-team reviews ──────────────────────────────────────────────────
+
+class ReviewRoundCreate(CamelModel):
+    colour: Literal["pink", "red", "gold", "white_glove"] = "red"
+    #: Left empty to take the default charter for that colour. A round whose
+    #: reviewers disagree about its purpose produces findings nobody can act on.
+    charter: str = ""
+    reviewers: list[str] = []
+
+
+class ReviewFindingCreate(CamelModel):
+    text: str
+    severity: Literal["must_fix", "should_fix", "consider"] = "should_fix"
+    #: Where in the response — "Volume I, §3.2". Free text, because a reviewer
+    #: reading a PDF describes a location the way they see it.
+    location: str = ""
+    #: The requirement it is about, when it is about one. This is what connects
+    #: a review to the compliance matrix rather than leaving it a parallel list.
+    requirement_id: str | None = Field(None, alias="requirementId")
+
+
+class ReviewFindingUpdate(CamelModel):
+    text: str | None = None
+    severity: Literal["must_fix", "should_fix", "consider"] | None = None
+    location: str | None = None
+    state: Literal["open", "fixed", "accepted", "rejected"] | None = None
+    #: Required to reject. A finding closed with no word about it is one the
+    #: next round raises again.
+    resolution: str | None = None
+
+
+class ReviewCloseRequest(CamelModel):
+    verdict: Literal["proceed", "proceed_with_fixes", "do_not_proceed"]
+    note: str | None = None
+    #: Required to close over unresolved must-fix findings, and recorded apart
+    #: from `note` so a clean pass and an overridden one stay distinguishable.
+    override_reason: str | None = Field(None, alias="overrideReason")
+
+
 # ── Response traceability ────────────────────────────────────────────────
 
 class ResponseCheckResponse(CamelModel):
