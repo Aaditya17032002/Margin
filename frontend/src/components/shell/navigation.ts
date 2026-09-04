@@ -1,6 +1,7 @@
 import {
   Activity,
   BookMarked,
+  BookOpen,
   CalendarClock,
   FileStack,
   FileText,
@@ -51,6 +52,7 @@ export const PRIMARY_NAV: { group: string; items: NavItem[] }[] = [
 ];
 
 export const SECONDARY_NAV: NavItem[] = [
+  { href: "/app/manual", label: "Manual", icon: BookOpen, description: "How Margin works, end to end" },
   { href: "/app/settings", label: "Settings", icon: Settings, description: "Account and organisation" },
   { href: "/app/help", label: "Help & shortcuts", icon: HelpCircle, description: "Docs and keyboard reference" },
 ];
