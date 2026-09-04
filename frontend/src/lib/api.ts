@@ -40,6 +40,7 @@ import type {
   AuditEntry,
   VerificationCorpus,
   VerificationQueue,
+  WeightingLens,
   WhiteGloveItem,
   WorkItem,
 } from "@/types";
@@ -455,6 +456,14 @@ export const reviewsApi = {
 /* ------------------------------------------------------------------ */
 /* Verification queue                                                   */
 /* ------------------------------------------------------------------ */
+
+export const weightingApi = {
+  /**
+   * Section M against the ledger against the response. Derived on every
+   * request, so closing a gap moves the lens immediately.
+   */
+  lens: (analysisId: string) => api<WeightingLens>(`/api/v1/analyses/${analysisId}/weighting`),
+};
 
 export const verificationApi = {
   /**

@@ -10,6 +10,7 @@ export const WORKSPACE_TABS = [
   { id: "reviews", label: "Reviews" },
   { id: "legal", label: "Legal & Regulatory" },
   { id: "evaluation", label: "Eligibility & Evaluation" },
+  { id: "weighting", label: "Where the Score Is" },
   { id: "risks", label: "Risks & Red Flags" },
   { id: "questions", label: "Q&A Builder" },
   { id: "silent", label: "SILENT Ledger" },

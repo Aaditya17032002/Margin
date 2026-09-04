@@ -689,6 +689,59 @@ export interface Contradiction {
   history?: { at: string; event: string; detail: string }[];
 }
 
+/**
+ * An evaluation factor, and what the response does about the requirements
+ * under it.
+ *
+ * `exposure` is the ordering that matters: weight share × weakness, so the top
+ * of the list is where the most points are least defended. It is not a
+ * predicted score — nothing here knows how an evaluator reads, and a number
+ * that looked like a score would be believed.
+ */
+export interface FactorRequirement {
+  id: string;
+  reference: string;
+  text: string;
+  stakes: Stakes;
+  owner: string | null;
+  status: CheckStatus | "unchecked";
+  /** Why this requirement was mapped to this factor. */
+  matchedBy: string;
+}
+
+export interface FactorCoverage {
+  factorId: string;
+  name: string;
+  weight: number;
+  /** Share of the total stated weight. Zero when the factor carries none. */
+  share: number;
+  method: string;
+  citation: Citation;
+  requirementIds: string[];
+  requirements: number;
+  counts: Record<string, number>;
+  weakness: number;
+  exposure: number;
+  /** Mandatory requirements under this factor the response does not answer. */
+  blocking: string[];
+  requirementDetail: FactorRequirement[];
+}
+
+export interface WeightingLens {
+  summary: {
+    factors: number;
+    weighted: number;
+    unweighted: number;
+    unmapped: string[];
+    weightAtRisk: number;
+    mostExposed: { name: string; share: number; weakness: number }[];
+    blocking: string[];
+  };
+  /** Weakness means nothing without a response to measure it against. */
+  responseBound: boolean;
+  factors: FactorCoverage[];
+}
+
 export interface QAQuestion {
   id: string;
   analysisId: string;
