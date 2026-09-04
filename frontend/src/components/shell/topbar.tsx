@@ -39,7 +39,7 @@ export function Topbar() {
   const crumbs = useBreadcrumbs(pathname);
 
   return (
-    <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-line bg-[color-mix(in_oklab,var(--paper-raised)_88%,transparent)] px-4 backdrop-blur-md">
+    <header className="z-40 flex h-16 shrink-0 items-center gap-3 border-b border-line bg-paper-raised px-4 lg:px-6">
       <Button
         variant="ghost"
         size="icon"

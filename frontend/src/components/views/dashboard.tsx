@@ -96,7 +96,7 @@ export function DashboardView() {
         />
       </motion.div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.15fr_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
         {focus ? <GoNoGoHero analysisId={focus.id} /> : null}
 
         <div className="space-y-6">
@@ -177,7 +177,7 @@ export function DashboardView() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <Panel>
           <PanelHeader
             title="In flight"

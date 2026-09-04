@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { NotificationsView } from "@/components/views/notifications";
+import { ScrollPage } from "@/components/ui/page";
 
 export const metadata: Metadata = {
   title: "Notifications",
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function NotificationsPage() {
-  return <NotificationsView />;
+  return (
+    <ScrollPage>
+      <NotificationsView />
+    </ScrollPage>
+  );
 }

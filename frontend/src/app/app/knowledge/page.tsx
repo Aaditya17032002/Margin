@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { KnowledgeView } from "@/components/views/knowledge";
+import { ScrollPage } from "@/components/ui/page";
 
 export const metadata: Metadata = {
   title: "Institutional memory",
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function KnowledgePage() {
-  return <KnowledgeView />;
+  return (
+    <ScrollPage>
+      <KnowledgeView />
+    </ScrollPage>
+  );
 }

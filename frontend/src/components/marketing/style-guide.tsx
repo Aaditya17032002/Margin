@@ -119,7 +119,7 @@ export function StyleGuideView() {
           <QuillMark />
         </div>
         <article className="mt-8 max-w-2xl space-y-3 border-t border-line py-5">
-          <div className="grid gap-x-6 gap-y-2 sm:grid-cols-[11rem_1fr]">
+          <div className="grid gap-x-6 gap-y-2 sm:grid-cols-[11rem_minmax(0,1fr)]">
             <div className="space-y-1.5">
               <h4 className="text-sm font-medium text-ink-soft">Page limit</h4>
               <StakesBadge stakes="disqualifying" />

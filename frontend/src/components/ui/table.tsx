@@ -8,8 +8,10 @@ import { Button } from "./button";
 
 export function TableFrame({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <div className={cn("overflow-hidden rounded-lg border border-line bg-paper-raised", className)}>
-      <div className="overflow-x-auto">{children}</div>
+    <div className={cn("flex flex-col overflow-hidden rounded-lg border border-line bg-paper-raised", className)}>
+      {/* Both axes scroll inside the frame: a wide table should not push the
+          page sideways, and a long one should not carry the header away. */}
+      <div className="scroll-region scroll-region-x min-h-0 flex-1">{children}</div>
     </div>
   );
 }
@@ -35,7 +37,8 @@ export function Th({
       scope="col"
       aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined}
       className={cn(
-        "border-b border-line bg-paper-sunk/60 px-3.5 py-2.5 text-left align-middle",
+        // Sticky so the column names survive scrolling a long result set.
+        "sticky top-0 z-10 border-b border-line bg-paper-sunk px-3.5 py-2.5 text-left align-middle",
         "font-mono text-2xs font-medium uppercase tracking-[0.11em] text-ink-faint",
         className,
       )}

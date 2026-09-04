@@ -99,7 +99,7 @@ export function PricingTable({ className, compact = false }: { className?: strin
 
   return (
     <div className={className}>
-      <div className="flex justify-center pb-8">
+      <div className="flex justify-center pb-10">
         <Segmented
           ariaLabel="Billing cycle"
           value={cycle}
@@ -111,7 +111,7 @@ export function PricingTable({ className, compact = false }: { className?: strin
         />
       </div>
 
-      <ul className="grid gap-5 lg:grid-cols-3">
+      <ul className="grid gap-6 lg:grid-cols-3">
         {PLANS.map((plan, index) => {
           const price = cycle === "annual" ? plan.annual : plan.monthly;
           return (
@@ -122,7 +122,7 @@ export function PricingTable({ className, compact = false }: { className?: strin
               viewport={{ once: true, margin: "-60px" }}
               transition={{ delay: index * 0.06, duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
               className={cn(
-                "flex flex-col rounded-xl border bg-paper-raised p-6",
+                "flex flex-col rounded-xl border bg-paper-raised p-7 lg:p-8",
                 plan.featured
                   ? "border-patina shadow-[var(--shadow-float)] ring-1 ring-[color-mix(in_oklab,var(--patina)_18%,transparent)]"
                   : "border-line",
@@ -132,9 +132,9 @@ export function PricingTable({ className, compact = false }: { className?: strin
                 <h3 className="font-display text-xl text-ink">{plan.name}</h3>
                 {plan.featured ? <Badge tone="patina">Most chosen</Badge> : null}
               </div>
-              <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">{plan.tagline}</p>
+              <p className="mt-2 text-sm leading-relaxed text-ink-soft">{plan.tagline}</p>
 
-              <div className="mt-6 flex items-baseline gap-1.5">
+              <div className="mt-8 flex items-baseline gap-1.5">
                 {price === null ? (
                   <span className="display-tight font-display text-3xl text-ink">Let&rsquo;s talk</span>
                 ) : (
@@ -152,12 +152,12 @@ export function PricingTable({ className, compact = false }: { className?: strin
                 asChild
                 variant={plan.featured ? "primary" : "secondary"}
                 size="md"
-                className="mt-6 w-full"
+                className="mt-7 w-full"
               >
                 <Link href={plan.href}>{plan.cta}</Link>
               </Button>
 
-              <ul className="mt-6 space-y-2.5 border-t border-line pt-5">
+              <ul className="mt-8 space-y-3 border-t border-line pt-6">
                 {plan.includes.map((item) => (
                   <li key={item} className="flex items-start gap-2.5 text-sm text-ink-soft">
                     <Check className="mt-0.5 size-3.5 shrink-0 text-patina" aria-hidden />
@@ -171,7 +171,7 @@ export function PricingTable({ className, compact = false }: { className?: strin
       </ul>
 
       {compact ? (
-        <p className="mt-6 text-center text-sm text-ink-soft">
+        <p className="mt-8 text-center text-sm text-ink-soft">
           <Link href="/pricing" className="text-patina underline-offset-4 hover:underline">
             Compare every plan side by side
           </Link>
@@ -187,7 +187,11 @@ function ComparisonTable() {
   return (
     <div className="mt-16">
       <h3 className="display-tight text-2xl text-ink">Every difference, in one place</h3>
-      <div className="scrollbar-none mt-6 overflow-x-auto rounded-lg border border-line bg-paper-raised">
+      {/* `relative` is load-bearing: the visually-hidden cell labels are
+          absolutely positioned, and without a positioned scroll container they
+          take the page as their containing block and escape the clip — which
+          is enough to make the whole document scroll sideways on a phone. */}
+      <div className="scrollbar-none relative mt-6 overflow-x-auto rounded-lg border border-line bg-paper-raised">
         <table className="w-full min-w-[42rem] border-collapse text-sm">
           <caption className="sr-only">Feature comparison across the three plans</caption>
           <thead>

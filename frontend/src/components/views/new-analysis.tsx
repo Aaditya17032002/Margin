@@ -102,7 +102,7 @@ export function NewAnalysisView() {
         description="Upload the solicitation, or pull it straight from a connected source. Amendments can be layered on afterwards."
       />
 
-      <div className="grid gap-6 lg:grid-cols-[1.25fr_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
         <div className="space-y-6">
           <Panel>
             <PanelHeader title="The document" description="One solicitation per analysis. Attachments are welcome." />

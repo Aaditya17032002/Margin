@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { ProfileView } from "@/components/views/profile";
+import { ScrollPage } from "@/components/ui/page";
 
 export const metadata: Metadata = {
   title: "Profile",
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function ProfilePage() {
-  return <ProfileView />;
+  return (
+    <ScrollPage>
+      <ProfileView />
+    </ScrollPage>
+  );
 }

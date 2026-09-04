@@ -15,7 +15,7 @@ export default function AppLoading() {
           </div>
         ))}
       </div>
-      <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <SkeletonPanel className="h-72" />
         <SkeletonPanel className="h-72" />
       </div>

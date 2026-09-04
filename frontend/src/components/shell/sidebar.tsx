@@ -34,13 +34,15 @@ export function Sidebar({ className }: { className?: string }) {
       aria-label="Primary"
       data-collapsed={collapsed || undefined}
       className={cn(
-        "group/sidebar sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-line bg-paper-raised lg:flex",
+        // A grid child of the shell, not a sticky element in a scrolling page:
+        // it holds its own height and scrolls its own nav list.
+        "group/sidebar hidden h-full shrink-0 flex-col border-r border-line bg-paper-raised lg:flex",
         "transition-[width] duration-260 ease-[cubic-bezier(0.32,0.72,0,1)]",
-        collapsed ? "w-[4.25rem]" : "w-[15.5rem]",
+        collapsed ? "w-[4.5rem]" : "w-[16.5rem]",
         className,
       )}
     >
-      <div className={cn("flex h-14 items-center border-b border-line", collapsed ? "justify-center px-2" : "px-4")}>
+      <div className={cn("flex h-16 shrink-0 items-center", collapsed ? "justify-center px-2" : "px-5")}>
         <Link
           href="/app"
           className="inline-flex items-center gap-2 rounded-sm focus-visible:outline-2"
@@ -51,14 +53,14 @@ export function Sidebar({ className }: { className?: string }) {
       </div>
 
       {!collapsed ? (
-        <div className="border-b border-line px-3 py-3">
-          <OrgSwitcher name={org?.name ?? "Thornfield Group"} plan={org?.plan ?? "Practice"} />
+        <div className="shrink-0 px-3 pb-4">
+          <OrgSwitcher name={org?.name ?? ""} plan={org?.plan ?? ""} />
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+      <div className="scroll-region min-h-0 flex-1 px-3 pb-4">
         {!collapsed ? (
-          <Button asChild variant="primary" size="sm" className="mb-5 w-full">
+          <Button asChild variant="primary" size="sm" className="mb-6 w-full">
             <Link href="/app/analyses/new">
               <Plus />
               New analysis
@@ -74,17 +76,17 @@ export function Sidebar({ className }: { className?: string }) {
           </Tooltip>
         )}
 
-        <div className="space-y-6">
+        <div className="space-y-7">
           {PRIMARY_NAV.map((group) => (
             <div key={group.group}>
               {!collapsed ? (
-                <p className="px-2.5 pb-1.5 font-mono text-2xs uppercase tracking-[0.14em] text-ink-faint">
+                <p className="px-3 pb-2 font-mono text-2xs uppercase tracking-[0.14em] text-ink-faint">
                   {group.group}
                 </p>
               ) : (
                 <span className="mx-auto mb-2 block h-px w-6 bg-line" aria-hidden />
               )}
-              <ul className="space-y-0.5">
+              <ul className="space-y-1">
                 {group.items.map((item) => {
                   const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
                   const link = (
@@ -92,7 +94,7 @@ export function Sidebar({ className }: { className?: string }) {
                       href={item.href}
                       aria-current={active ? "page" : undefined}
                       className={cn(
-                        "relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm",
+                        "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm",
                         "transition-colors duration-150 ease-[cubic-bezier(0.32,0.72,0,1)]",
                         collapsed && "justify-center px-0",
                         active ? "text-ink" : "text-ink-soft hover:bg-paper-sunk hover:text-ink",
@@ -127,8 +129,8 @@ export function Sidebar({ className }: { className?: string }) {
         </div>
       </div>
 
-      <div className="border-t border-line px-3 py-3">
-        <ul className="space-y-0.5">
+      <div className="shrink-0 border-t border-line px-3 py-3">
+        <ul className="space-y-1">
           {SECONDARY_NAV.map((item) => {
             const active = pathname.startsWith(item.href);
             const link = (
@@ -136,7 +138,7 @@ export function Sidebar({ className }: { className?: string }) {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors duration-150",
+                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors duration-150",
                   collapsed && "justify-center px-0",
                   active ? "bg-paper-sunk text-ink" : "text-ink-soft hover:bg-paper-sunk hover:text-ink",
                 )}
@@ -195,19 +197,18 @@ function OrgSwitcher({ name, plan }: { name: string; plan: string }) {
           <ChevronsUpDown className="size-3.5 shrink-0 text-ink-faint" aria-hidden />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuLabel>Organisations</DropdownMenuLabel>
+      <DropdownMenuContent align="start" className="w-60">
+        <DropdownMenuLabel>Organisation</DropdownMenuLabel>
         <DropdownMenuItem>
           <Check className="text-patina" />
           {name}
         </DropdownMenuItem>
-        <DropdownMenuItem>
-          <span className="size-4" />
-          Thornfield Federal LLC
-        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/app/settings?tab=organization">Organisation settings</Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/app/team">Invite a colleague</Link>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

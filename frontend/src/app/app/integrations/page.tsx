@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { IntegrationsView } from "@/components/views/integrations";
+import { ScrollPage } from "@/components/ui/page";
 
 export const metadata: Metadata = {
   title: "Integrations",
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function IntegrationsPage() {
-  return <IntegrationsView />;
+  return (
+    <ScrollPage>
+      <IntegrationsView />
+    </ScrollPage>
+  );
 }

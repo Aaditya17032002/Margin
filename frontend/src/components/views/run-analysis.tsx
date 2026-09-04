@@ -5,13 +5,20 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ArrowRight, Check } from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import { AGENT_BY_ID, MODE_BY_ID } from "@/data/agents";
 import { analysesApi, streamEvents, type RunEvent } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/ui/surface";
 import { Callout } from "@/components/ui/feedback";
 import { notify } from "@/components/ui/toaster";
-import { AgentRoster, ReadingProgress, ReasoningTicker, type AgentPhase } from "@/components/domain/reading-room";
+import {
+  AgentRoster,
+  CountUp,
+  ReadingProgress,
+  ReadingPulse,
+  ReasoningTicker,
+  type AgentPhase,
+} from "@/components/domain/reading-room";
 import { CitationMeta, StakesBadge } from "@/components/domain/primitives";
 import { Wordmark } from "@/components/domain/marks";
 import { useAnalysesStore } from "@/stores/analyses";
@@ -52,6 +59,7 @@ export function RunAnalysisView({ analysisId }: { analysisId: string }) {
   const finished = ranToCompletion || alreadyRead;
 
   const done = agents.filter((id) => phases[id] === "done").length;
+  const reading = agents.find((id) => phases[id] === "reading");
   const progress = finished ? 100 : agents.length ? (done / agents.length) * 100 : 0;
 
   React.useEffect(() => {
@@ -154,6 +162,7 @@ export function RunAnalysisView({ analysisId }: { analysisId: string }) {
         loadNotifications({ force: true }),
         loadReports({ force: true }),
       ]);
+      setPhases((p) => Object.fromEntries(agents.map((id) => [id, p[id] ?? "done"])) as typeof p);
       setRanToCompletion(true);
       notify.success("Analysis complete.", {
         description: fresh?.summary || "Every finding is cited and ready to verify.",
@@ -165,71 +174,106 @@ export function RunAnalysisView({ analysisId }: { analysisId: string }) {
 
   if (!analysis) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
+      <div className="flex flex-1 items-center justify-center">
         <p className="text-sm text-ink-faint">That analysis is no longer here.</p>
       </div>
     );
   }
 
   const mode = MODE_BY_ID[analysis.mode];
+  const verified = surfaced.filter((f) => f.verified).length;
+  const flagged = surfaced.filter((f) => f.flagged).length;
 
   return (
-    <div className="relative min-h-[calc(100dvh-3.5rem)] bg-paper px-5 py-8 lg:px-10">
+    <div className="relative flex min-h-0 flex-1 flex-col bg-paper">
       <ReadingProgress value={progress} />
 
-      <div className="mx-auto max-w-[74rem] space-y-8">
-        <header className="space-y-2">
-          <div className="flex items-center gap-2.5">
-            <Wordmark showText={false} />
-            <p className="eyebrow">The reading room</p>
+      {/* Identity and the live count. Fixed — the one place a person looks to
+          know how far along the read is. */}
+      <header className="shrink-0 border-b border-line bg-paper-raised px-6 py-5 lg:px-8">
+        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2.5 pb-2">
+              <Wordmark showText={false} />
+              <p className="eyebrow">The reading room</p>
+            </div>
+            <h1 className="display-tight truncate text-2xl text-ink">{analysis.title}</h1>
+            <p className="mt-1.5 text-sm text-ink-soft">
+              {mode.name} · {mode.passes} · {analysis.fileName}
+            </p>
           </div>
-          <h1 className="display-tight text-3xl text-ink">{analysis.title}</h1>
-          <p className="text-sm text-ink-soft">
-            {mode.name} · {mode.passes} · {analysis.fileName}
-          </p>
-        </header>
 
-        {failure ? (
+          <dl className="flex items-end gap-8">
+            <Stat label="Findings" value={surfaced.length} />
+            <Stat label="Verified" value={verified} tone="patina" />
+            <Stat label="Flagged" value={flagged} tone="seal" />
+            <div className="hidden sm:block">
+              <dt className="eyebrow pb-1">Pass</dt>
+              <dd className="font-display text-2xl leading-none text-ink">
+                <span className="tabular">{done}</span>
+                <span className="text-ink-faint">/{agents.length}</span>
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </header>
+
+      {failure ? (
+        <div className="shrink-0 px-6 pt-5 lg:px-8">
           <Callout tone="seal" title="The read stopped">
             {failure} Nothing was written to the analysis — you can start it again from the board.
           </Callout>
-        ) : null}
+        </div>
+      ) : null}
 
-        <div className="grid gap-6 lg:grid-cols-[22rem_1fr]">
-          <div className="space-y-6">
-            <Panel className="px-5 py-5">
-              <p className="eyebrow pb-4">Roster</p>
-              <AgentRoster agents={agents} phases={phases} />
-            </Panel>
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        {/* The roster and what it is thinking — its own column, its own scroll,
+            with the reasoning pinned to the bottom so a new line never pushes
+            the roster around. */}
+        <div className="flex min-h-0 shrink-0 flex-col border-line lg:w-[24rem] lg:border-r">
+          <div className="scroll-region min-h-0 flex-1 px-6 py-6">
+            <p className="eyebrow pb-4">Roster</p>
+            <AgentRoster agents={agents} phases={phases} />
 
-            <Panel className="overflow-hidden px-5 py-4">
-              <p className="eyebrow pb-2">Reasoning</p>
-              <ReasoningTicker lines={lines} />
-            </Panel>
+            <div className="pt-7">
+              <p className="eyebrow pb-3">The document</p>
+              <ReadingPulse active={Boolean(reading) && !finished} progress={progress / 100} />
+            </div>
           </div>
 
-          <Panel className="min-h-[32rem]">
-            <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
-              <p className="eyebrow">Findings as they settle</p>
-              <span className="font-mono text-2xs tabular text-ink-faint">{surfaced.length}</span>
-            </div>
+          <div className="shrink-0 border-t border-line bg-paper-raised px-6 py-4">
+            <p className="eyebrow pb-2">Reasoning</p>
+            <ReasoningTicker lines={lines} className="h-28" />
+          </div>
+        </div>
 
-            <div className="px-5 py-2">
+        {/* Findings settling in. The only region that moves under the reader. */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line px-6 lg:px-8">
+            <p className="eyebrow">Findings as they settle</p>
+            <p className="font-mono text-2xs text-ink-faint">
+              <CountUp value={surfaced.length} />
+              {reading
+                ? ` · ${AGENT_BY_ID[reading]?.name ?? reading} reading`
+                : finished
+                  ? " · complete"
+                  : ""}
+            </p>
+          </div>
+
+          <div className="scroll-region min-h-0 flex-1 px-6 lg:px-8">
+            <ul className="mx-auto max-w-[52rem]">
               <AnimatePresence initial={false}>
-                {surfaced.map((finding, index) => (
-                  <motion.div
-                    key={`${finding.id}-${index}`}
-                    initial={reduce ? { opacity: 0 } : { opacity: 0, y: 14, filter: "blur(3px)" }}
+                {surfaced.map((finding) => (
+                  <motion.li
+                    key={finding.id}
+                    layout={reduce ? false : "position"}
+                    initial={reduce ? { opacity: 0 } : { opacity: 0, y: 16, filter: "blur(4px)" }}
                     animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                    transition={{
-                      type: "spring",
-                      stiffness: 340,
-                      damping: 34,
-                      delay: reduce ? 0 : 0.02,
-                    }}
-                    className="grid gap-x-5 gap-y-2 border-b border-line py-4 last:border-b-0 sm:grid-cols-[10rem_1fr]"
+                    transition={{ type: "spring", stiffness: 320, damping: 34 }}
+                    className="grid gap-x-6 gap-y-2.5 border-b border-line py-5 last:border-b-0 sm:grid-cols-[11rem_minmax(0,1fr)]"
                   >
-                    <div className="space-y-1.5">
+                    <div className="space-y-2">
                       <p className="text-sm font-medium text-ink-soft">{finding.label}</p>
                       <StakesBadge stakes={finding.stakes} />
                     </div>
@@ -248,53 +292,79 @@ export function RunAnalysisView({ analysisId }: { analysisId: string }) {
                         clamp={2}
                       />
                     </div>
-                  </motion.div>
+                  </motion.li>
                 ))}
               </AnimatePresence>
+            </ul>
 
-              {surfaced.length === 0 ? (
-                <div className="flex min-h-72 flex-col items-center justify-center gap-3 text-center">
-                  <motion.div
-                    animate={reduce ? undefined : { opacity: [0.4, 1, 0.4] }}
-                    transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
-                    className="font-mono text-2xs uppercase tracking-[0.16em] text-ink-faint"
-                  >
-                    opening the document
-                  </motion.div>
-                  <p className="max-w-xs text-sm leading-relaxed text-ink-faint">
-                    Nothing appears here until a finding can point at the line it came from.
-                  </p>
-                </div>
+            {surfaced.length === 0 ? <OpeningState failed={Boolean(failure)} /> : null}
+
+            <AnimatePresence>
+              {finished ? (
+                <motion.div
+                  initial={reduce ? { opacity: 0 } : { opacity: 0, y: 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                  className="mx-auto my-8 flex max-w-[52rem] flex-wrap items-center justify-between gap-4 rounded-lg border border-line border-l-[3px] border-l-leaf bg-[var(--leaf-tint)] px-5 py-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <Check className="mt-0.5 size-4 shrink-0 text-leaf" aria-hidden />
+                    <div>
+                      <p className="text-sm font-medium text-ink">The read is finished.</p>
+                      <p className="text-sm text-ink-soft">
+                        Every claim resolves to a page and a section. What the document never said is
+                        waiting in the SILENT ledger.
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="primary" onClick={() => router.push(`/app/analyses/${analysis.id}`)}>
+                    Open the workspace
+                    <ArrowRight />
+                  </Button>
+                </motion.div>
               ) : null}
-            </div>
-          </Panel>
+            </AnimatePresence>
+          </div>
         </div>
-
-        <AnimatePresence>
-          {finished ? (
-            <motion.div
-              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-line border-l-[3px] border-l-leaf bg-[var(--leaf-tint)] px-5 py-4"
-            >
-              <div className="flex items-start gap-3">
-                <Check className="mt-0.5 size-4 shrink-0 text-leaf" aria-hidden />
-                <div>
-                  <p className="text-sm font-medium text-ink">The read is finished.</p>
-                  <p className="text-sm text-ink-soft">
-                    Every claim resolves to a page and a section. What the document never said is waiting in the SILENT ledger.
-                  </p>
-                </div>
-              </div>
-              <Button variant="primary" onClick={() => router.push(`/app/analyses/${analysis.id}`)}>
-                Open the workspace
-                <ArrowRight />
-              </Button>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
       </div>
+    </div>
+  );
+}
+
+/** One live number in the reading room's header. */
+function Stat({ label, value, tone }: { label: string; value: number; tone?: "patina" | "seal" }) {
+  return (
+    <div>
+      <dt className="eyebrow pb-1">{label}</dt>
+      <dd
+        className={cn(
+          "font-display text-2xl leading-none",
+          value === 0 || !tone ? "text-ink" : tone === "patina" ? "text-patina" : "text-seal",
+        )}
+      >
+        <CountUp value={value} />
+      </dd>
+    </div>
+  );
+}
+
+/** What the findings column says before the first claim has been grounded. */
+function OpeningState({ failed }: { failed: boolean }) {
+  const reduce = useReducedMotion();
+  return (
+    <div className="flex min-h-[24rem] flex-col items-center justify-center gap-3 text-center">
+      {!failed ? (
+        <motion.div
+          animate={reduce ? undefined : { opacity: [0.35, 1, 0.35] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+          className="font-mono text-2xs uppercase tracking-[0.16em] text-ink-faint"
+        >
+          opening the document
+        </motion.div>
+      ) : null}
+      <p className="max-w-xs text-sm leading-relaxed text-ink-faint">
+        Nothing appears here until a finding can point at the line it came from.
+      </p>
     </div>
   );
 }

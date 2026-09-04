@@ -129,7 +129,7 @@ export function ReportsView() {
         description="Turn an analysis into the document your reviewers actually read."
       />
 
-      <div className="grid gap-6 lg:grid-cols-[22rem_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
         <Panel className="p-5 lg:sticky lg:top-20 lg:self-start">
           <h2 className="text-lg text-ink">Generate</h2>
           <p className="mt-0.5 text-sm text-ink-soft">Every citation travels with the text.</p>

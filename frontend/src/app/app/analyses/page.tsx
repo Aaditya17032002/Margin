@@ -8,5 +8,7 @@ export const metadata: Metadata = {
 };
 
 export default function AnalysesPage() {
-  return <AnalysesBoardView />;
+  return (
+    <AnalysesBoardView />
+  );
 }

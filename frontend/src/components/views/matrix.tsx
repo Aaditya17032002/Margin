@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { PageHeader } from "@/components/ui/surface";
+import { Page, PageBar } from "@/components/ui/page";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/controls";
 import { ComplianceMatrix } from "@/components/workspace/compliance-matrix";
 import { useAllMatrixData } from "@/hooks/use-workspace-data";
@@ -24,8 +24,8 @@ export function MatrixView() {
   );
 
   return (
-    <div className="mx-auto max-w-[84rem] space-y-6">
-      <PageHeader
+    <Page>
+      <PageBar
         eyebrow="Requirements"
         title="Compliance matrix"
         description="Every shall, should, and may extracted from the documents — with the clause it came from still attached."
@@ -46,11 +46,15 @@ export function MatrixView() {
         }
       />
 
-      <ComplianceMatrix
-        analysisId={scope === "all" ? undefined : scope}
-        showAnalysisColumn={scope === "all"}
-        analysisTitles={titles}
-      />
-    </div>
+      {/* The grid gets the whole remaining height and scrolls inside itself. */}
+      <div className="flex min-h-0 flex-col px-6 pb-6 pt-5 lg:px-10">
+        <ComplianceMatrix
+          analysisId={scope === "all" ? undefined : scope}
+          showAnalysisColumn={scope === "all"}
+          analysisTitles={titles}
+          className="min-h-0 flex-1"
+        />
+      </div>
+    </Page>
   );
 }

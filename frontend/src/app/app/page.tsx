@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { DashboardView } from "@/components/views/dashboard";
+import { ScrollPage } from "@/components/ui/page";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function DashboardPage() {
-  return <DashboardView />;
+  return (
+    <ScrollPage>
+      <DashboardView />
+    </ScrollPage>
+  );
 }
