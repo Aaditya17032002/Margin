@@ -34,6 +34,7 @@ import { VerificationPanel } from "@/components/workspace/verification";
 import { ReviewsPanel } from "@/components/workspace/reviews";
 import { ContradictionsPanel } from "@/components/workspace/contradictions";
 import { WeightingPanel } from "@/components/workspace/weighting";
+import { CriticalPathPanel } from "@/components/workspace/critical-path";
 import {
   AmendmentsPanel,
   ComplianceMatrix,
@@ -382,6 +383,7 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
                 {tab === "reviews" ? <ReviewsPanel analysis={analysis} /> : null}
                 {tab === "contradictions" ? <ContradictionsPanel analysis={analysis} /> : null}
                 {tab === "weighting" ? <WeightingPanel analysis={analysis} /> : null}
+                {tab === "path" ? <CriticalPathPanel analysis={analysis} /> : null}
                 {tab === "scope" ? (
                   <FindingsPanel
                     analysis={analysis}

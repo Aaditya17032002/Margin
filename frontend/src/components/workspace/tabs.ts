@@ -2,6 +2,7 @@ export const WORKSPACE_TABS = [
   { id: "go-no-go", label: "Go / No-Go" },
   { id: "verify", label: "Needs You" },
   { id: "overview", label: "Overview & Dates" },
+  { id: "path", label: "Critical Path" },
   { id: "coverage", label: "Coverage" },
   { id: "scope", label: "Scope" },
   { id: "matrix", label: "Compliance Matrix" },

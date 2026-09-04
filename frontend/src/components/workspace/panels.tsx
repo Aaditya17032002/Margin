@@ -26,12 +26,119 @@ import { ComplianceMatrix } from "./compliance-matrix";
 import { useAnalysesStore, allFindings } from "@/stores/analyses";
 import { useQAStore } from "@/stores/qa";
 import { useReportsStore } from "@/stores/workspace";
-import { governanceApi } from "@/lib/api";
-import type { Analysis, AuditEntry, GoNoGo, ResearchClaim, ResearchSource } from "@/types";
+import { decisionApi, governanceApi } from "@/lib/api";
+import type {
+  Analysis,
+  AuditEntry,
+  DecisionEvidence,
+  GoNoGo,
+  ResearchClaim,
+  ResearchSource,
+} from "@/types";
 
 /* ================================================================ */
 /* Go / No-Go                                                        */
 /* ================================================================ */
+
+
+/**
+ * What is known, before somebody decides.
+ *
+ * Margin does not decide. Whether the company wants this customer, whether the
+ * team is free in March, what the principal thinks of the incumbent — none of
+ * that is in the document, and a product that produced a bid recommendation
+ * would be pretending otherwise.
+ *
+ * What it can do is make the decision accountable. This is deliberately the
+ * uncomfortable half — failed gates, unowned mandatory requirements, coverage
+ * that was incomplete, contradictions nobody resolved — because a record that
+ * only carried the reasons to bid would be a marketing document, and the value
+ * of one is that it is what you read when it went wrong.
+ */
+function DecisionEvidencePanel({ analysis }: { analysis: Analysis }) {
+  const [evidence, setEvidence] = React.useState<DecisionEvidence | null>(null);
+
+  React.useEffect(() => {
+    let live = true;
+    decisionApi
+      .evidence(analysis.id)
+      .then((result) => {
+        if (live) setEvidence(result);
+      })
+      .catch(() => {
+        if (live) setEvidence(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [analysis.id, analysis.updatedAt]);
+
+  if (!evidence || !evidence.considerations.length) return null;
+
+  const against = evidence.considerations.filter((c) => c.weight === "against");
+  const unknown = evidence.considerations.filter((c) => c.weight === "unknown");
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="What is known"
+        description={evidence.readiness.headline}
+      />
+      <div className="space-y-4 px-5 py-4">
+        {against.length ? (
+          <div>
+            <p className="text-2xs uppercase tracking-[0.08em] text-ink-faint">
+              Arguing against
+            </p>
+            <ul className="mt-2 space-y-2">
+              {against.map((item) => (
+                <li key={item.summary} className="flex items-start gap-2">
+                  <CircleSlash className="mt-0.5 size-4 shrink-0 text-seal" aria-hidden />
+                  <span className="min-w-0 text-sm leading-relaxed text-ink">
+                    {item.summary}
+                    {item.detail ? (
+                      <span className="block text-xs text-ink-soft">{item.detail}</span>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {unknown.length ? (
+          <div>
+            <p className="text-2xs uppercase tracking-[0.08em] text-ink-faint">
+              Still unknown
+            </p>
+            <ul className="mt-2 space-y-2">
+              {unknown.map((item) => (
+                <li key={item.summary} className="flex items-start gap-2">
+                  <Minus className="mt-0.5 size-4 shrink-0 text-ink-faint" aria-hidden />
+                  <span className="min-w-0 text-sm leading-relaxed text-ink">
+                    {item.summary}
+                    {item.detail ? (
+                      <span className="block text-xs text-ink-soft">{item.detail}</span>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <Well>
+          <p className="text-xs leading-relaxed text-ink-soft">
+            <strong className="font-medium text-ink">This is not a recommendation.</strong> A
+            number that said &ldquo;72% &mdash; bid&rdquo; would be believed, and nothing here
+            knows whether you want this customer or have the team free. Recording the decision
+            below freezes this list beside it, so the question six months from now is answerable.
+          </p>
+        </Well>
+      </div>
+    </Panel>
+  );
+}
 
 export function GoNoGoPanel({ analysis }: { analysis: Analysis }) {
   const reduce = useReducedMotion();
@@ -44,6 +151,11 @@ export function GoNoGoPanel({ analysis }: { analysis: Analysis }) {
 
   function record(decision: GoNoGo) {
     const previous = decide(analysis.id, decision, note.trim() || undefined);
+    // Recorded alongside the board's own state so the evidence is frozen with
+    // it. A decision with no record of what was known is a status field.
+    void decisionApi
+      .record(analysis.id, { decision, rationale: note.trim() || "No reason recorded." })
+      .catch(() => undefined);
     log({
       actor: "You",
       action: `recorded a ${decision === "no-bid" ? "No-bid" : decision === "bid" ? "Bid" : "Watch"} decision on`,
@@ -64,6 +176,7 @@ export function GoNoGoPanel({ analysis }: { analysis: Analysis }) {
 
   return (
     <div className="space-y-6">
+      <DecisionEvidencePanel analysis={analysis} />
       {/* The decision reads as one object: the standing, the reason, and the
           three buttons that settle it. Splitting them across two panels made
           the gauge look like an ornament. */}

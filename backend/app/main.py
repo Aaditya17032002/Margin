@@ -101,6 +101,7 @@ def create_app() -> FastAPI:
         preferences,
         reports,
         deadlines,
+        decisions,
         activity,
         search,
         verification,
@@ -129,6 +130,7 @@ def create_app() -> FastAPI:
     app.include_router(preferences.router, prefix=prefix)
     app.include_router(reports.router, prefix=prefix)
     app.include_router(deadlines.router, prefix=prefix)
+    app.include_router(decisions.router, prefix=prefix)
     app.include_router(activity.router, prefix=prefix)
     app.include_router(search.router, prefix=prefix)
     app.include_router(verification.router, prefix=prefix)

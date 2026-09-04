@@ -805,6 +805,93 @@ export interface ContentSuggestion {
   timesUsed: number;
 }
 
+/**
+ * What can still stop this response going out, in the order it will.
+ *
+ * A deadline list says the proposal is due in nine days. This says which of
+ * the forty open things can still be finished and which one is already too
+ * late — and the difference between those is a decision rather than a task.
+ */
+export interface PathStep {
+  kind: "submission" | "production" | "review";
+  label: string;
+  due: string | null;
+  state: "clear" | "at risk" | "past the point";
+  detail: string;
+}
+
+export interface PathItem {
+  requirementId: string;
+  reference: string;
+  text: string;
+  stakes: Stakes;
+  owner: string | null;
+  status: MatrixStatus;
+  /** The latest date drafting can start and still clear every gate. */
+  latestStart: string | null;
+  daysLeft: number | null;
+  state: "clear" | "at risk" | "past the point";
+  reason: string;
+  blocking: boolean;
+}
+
+export interface CriticalPath {
+  submission: string | null;
+  steps: PathStep[];
+  items: PathItem[];
+  notes: string[];
+  summary: {
+    total: number;
+    pastThePoint: number;
+    atRisk: number;
+    clear: number;
+    /** Mandatory requirements whose start date has already gone. */
+    blockingPastThePoint: number;
+  };
+}
+
+/**
+ * What was known when the bid decision was made.
+ *
+ * Margin does not decide — whether the company wants this customer is not in
+ * the document. What it does is make the decision accountable.
+ */
+export interface Consideration {
+  kind: string;
+  weight: "against" | "for" | "unknown";
+  summary: string;
+  detail: string;
+}
+
+export interface DecisionEvidence {
+  at: string;
+  facts: Record<string, number>;
+  considerations: Consideration[];
+  against: number;
+  unknown: number;
+  readiness: {
+    against: number;
+    unknown: number;
+    settled: boolean;
+    headline: string;
+  };
+}
+
+export interface DecisionRecord {
+  id: string;
+  analysisId: string;
+  decision: GoNoGo;
+  rationale: string;
+  decidedBy: string;
+  decidedAt: string | null;
+  participants: string[];
+  evidence: DecisionEvidence;
+  acknowledged: string[];
+  supersedesId: string | null;
+  outcome: "pending" | "won" | "lost" | "no_award" | "not_submitted";
+  outcomeNote: string | null;
+}
+
 export interface QAQuestion {
   id: string;
   analysisId: string;

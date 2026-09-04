@@ -19,6 +19,7 @@ from app.db.models.team_invite import TeamInvite
 from app.db.models.integration import Integration
 from app.db.models.template import Template
 from app.db.models.knowledge import KnowledgeItem
+from app.db.models.decision import DecisionRecord
 from app.db.models.memory import ContentBlock, PastPerformance
 from app.db.models.report import Report
 from app.db.models.activity import ActivityLog
@@ -47,6 +48,7 @@ __all__ = [
     "KnowledgeItem",
     "PastPerformance",
     "ContentBlock",
+    "DecisionRecord",
     "Report",
     "ActivityLog",
     "Preference",

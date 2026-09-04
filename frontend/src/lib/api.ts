@@ -14,9 +14,13 @@ import type {
   Analysis,
   AnalysisMode,
   Contradiction,
+  CriticalPath,
+  DecisionEvidence,
+  DecisionRecord,
   AppNotification,
   DocType,
   ExportRecord,
+  GoNoGo,
   RemoteEntry,
   Integration,
   IntegrationId,
@@ -458,6 +462,30 @@ export const reviewsApi = {
 /* ------------------------------------------------------------------ */
 /* Verification queue                                                   */
 /* ------------------------------------------------------------------ */
+
+export const decisionApi = {
+  /** What is known right now, in the shape a decision record freezes. */
+  evidence: (analysisId: string) =>
+    api<DecisionEvidence>(`/api/v1/analyses/${analysisId}/decision/evidence`),
+
+  history: (analysisId: string) =>
+    api<DecisionRecord[]>(`/api/v1/analyses/${analysisId}/decision`),
+
+  /** Records the decision with the evidence frozen as it stood. */
+  record: (
+    analysisId: string,
+    body: { decision: GoNoGo; rationale: string; participants?: string[]; acknowledged?: string[] },
+  ) => api<DecisionRecord>(`/api/v1/analyses/${analysisId}/decision`, { method: "POST", body }),
+
+  /** What actually happened. The half that makes the record worth keeping. */
+  outcome: (analysisId: string, recordId: string, body: { outcome: DecisionRecord["outcome"]; note?: string }) =>
+    api<DecisionRecord>(`/api/v1/analyses/${analysisId}/decision/${recordId}`, {
+      method: "PATCH",
+      body,
+    }),
+
+  path: (analysisId: string) => api<CriticalPath>(`/api/v1/analyses/${analysisId}/critical-path`),
+};
 
 export const memoryApi = {
   /**

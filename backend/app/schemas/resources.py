@@ -89,6 +89,31 @@ class MatrixRowResponse(CamelModel):
     history: list[dict] = []
 
 
+# ── Decision record ──────────────────────────────────────────────────────
+
+class DecisionCreate(CamelModel):
+    """A bid/no-bid decision, with the evidence frozen as it stood."""
+
+    decision: Literal["bid", "no-bid", "watch"]
+    #: The one field that cannot be derived from anything else, and the only
+    #: one that matters in a debrief.
+    rationale: str
+    participants: list[str] = []
+    #: The considerations the decision-maker explicitly saw and accepted. "We
+    #: knew about the two unresolved contradictions and bid anyway" is a
+    #: defensible position; "we did not notice them" is not.
+    acknowledged: list[str] = []
+
+
+class DecisionOutcome(CamelModel):
+    """What actually happened. Without it the evidence is a snapshot; with it
+    it is the only data anybody has about whether their bid decisions are any
+    good."""
+
+    outcome: Literal["pending", "won", "lost", "no_award", "not_submitted"]
+    note: str | None = None
+
+
 # ── Institutional memory ─────────────────────────────────────────────────
 
 class _Columns(CamelModel):
