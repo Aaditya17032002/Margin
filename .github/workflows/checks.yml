@@ -1,0 +1,47 @@
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen || uv sync
+      - name: Tests
+        run: uv run pytest -q
+
+      # The recall gate. Deterministic extraction is scored against the
+      # labelled corpus in evals/cases on every change, so a parser or pattern
+      # edit cannot quietly reduce what Margin finds. It needs no API keys,
+      # which is why it runs here rather than nightly and out of sight.
+      - name: Extraction recall
+        run: uv run python -m evals.harness --gate --json ../recall.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: extraction-recall
+          path: recall.json
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build

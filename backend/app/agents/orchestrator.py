@@ -16,6 +16,10 @@ from redis.asyncio import Redis
 from app.agents.events import AgentEvent, EventType
 from app.core.logging import get_logger
 from app.pipeline.anchor import CitationAnchor
+from app.pipeline.corpus import Corpus
+from app.pipeline.coverage import CoverageLedger
+from app.pipeline.retrieval import CorpusRetriever
+from app.pipeline.sweep import SweepResult, hits_for_agent
 from app.providers.base import AgentProvider, ChunkResult
 from app.providers.factory import get_agent_provider, get_research_provider
 
@@ -78,19 +82,50 @@ async def run_orchestration(
     *,
     analysis_id: str,
     mode: str,
-    chunks: list[ChunkResult],
+    corpus: Corpus,
     redis: Redis,
-    pages: list[dict] | None = None,
+    embeddings: list[list[float]] | None = None,
+    sweep: SweepResult | None = None,
+    ledger: CoverageLedger | None = None,
     agent_provider: AgentProvider | None = None,
 ) -> dict[str, Any]:
-    """Run the full agent roster for an analysis, streaming events."""
+    """Run the full agent roster over the whole package, streaming events."""
 
     if agent_provider is None:
         agent_provider = get_agent_provider()
 
     # Built once and shared by every specialist: resolving a quote is a search
-    # over the whole document, and indexing it per agent would be wasteful.
+    # over the whole package, and indexing it per agent would be wasteful.
+    pages = corpus.pages_for_anchor()
     anchor = CitationAnchor(pages) if pages else None
+    retriever = CorpusRetriever(corpus, embeddings)
+    logger.info(
+        "orchestration_start",
+        mode=mode,
+        documents=len(corpus.documents),
+        pages=corpus.page_count,
+        chunks=len(corpus.chunks),
+        retrieval=retriever.mode,
+    )
+
+    async def context_for(agent_id: str) -> tuple[list[ChunkResult], list]:
+        """What one specialist reads: the passages retrieval chose, plus the
+        sweep hits of the kinds that specialist is responsible for."""
+        retrieved = await retriever.for_agent(agent_id)
+        if ledger is not None:
+            ledger.record_analysed(agent_id, [r.chunk.chunk_index for r in retrieved])
+        chunk_results = [
+            ChunkResult(
+                text=r.chunk.text,
+                page=r.chunk.page,
+                section_path=r.chunk.section_path,
+                bbox=r.chunk.bbox,
+                chunk_index=r.chunk.chunk_index,
+            )
+            for r in retrieved
+        ]
+        hits = hits_for_agent(sweep, agent_id) if sweep else []
+        return chunk_results, hits
 
     channel = f"analysis:{analysis_id}:events"
     roster = MODE_AGENTS.get(mode, MODE_AGENTS["standard"])
@@ -111,8 +146,11 @@ async def run_orchestration(
         event = AgentEvent(EventType.AGENT_STARTED, agent_id)
         await redis.publish(channel, event.to_json())
 
-        # Run the specialist
-        result = await agent_provider.run_specialist(agent_id, {}, chunks, anchor=anchor)
+        # Run the specialist over what retrieval and the sweep chose for it
+        agent_chunks, agent_hits = await context_for(agent_id)
+        result = await agent_provider.run_specialist(
+            agent_id, {}, agent_chunks, anchor=anchor, sweep_hits=agent_hits, corpus=corpus
+        )
 
         # Map findings to the right section
         section = AGENT_SECTIONS.get(agent_id, "identity")
@@ -139,7 +177,10 @@ async def run_orchestration(
     if "dates" in roster:
         await redis.publish(channel, AgentEvent(EventType.AGENT_STARTED, "dates").to_json())
         try:
-            dates_result = await agent_provider.run_specialist("dates", {}, chunks, anchor=anchor)
+            date_chunks, date_hits = await context_for("dates")
+            dates_result = await agent_provider.run_specialist(
+                "dates", {}, date_chunks, anchor=anchor, sweep_hits=date_hits, corpus=corpus
+            )
             key_dates = dates_result.findings
         except Exception:  # noqa: BLE001 — a missing calendar must not fail the read
             logger.exception("dates_agent_failed")
@@ -193,7 +234,14 @@ async def run_orchestration(
         for section_findings in all_findings.values():
             all_flat_findings.extend(section_findings)
 
-        verified_findings = await agent_provider.verify(all_flat_findings, chunks)
+        # The verifier re-reads against the whole corpus, not a retrieved slice:
+        # its job is to check a quote is really there, which is a question about
+        # the package rather than about relevance.
+        verifier_chunks = [
+            ChunkResult(text=c.text, page=c.page, section_path=c.section_path, bbox=c.bbox, chunk_index=c.chunk_index)
+            for c in corpus.chunks
+        ]
+        verified_findings = await agent_provider.verify(all_flat_findings, verifier_chunks)
 
         # Re-distribute verified findings back to sections
         verified_by_id = {f["id"]: f for f in verified_findings}
@@ -214,7 +262,10 @@ async def run_orchestration(
         event = AgentEvent(EventType.AGENT_STARTED, "qa")
         await redis.publish(channel, event.to_json())
 
-        qa_result = await agent_provider.run_specialist("qa", {}, chunks, anchor=anchor)
+        qa_chunks, qa_hits = await context_for("qa")
+        qa_result = await agent_provider.run_specialist(
+            "qa", {}, qa_chunks, anchor=anchor, sweep_hits=qa_hits, corpus=corpus
+        )
         questions = qa_result.findings
 
         await redis.publish(channel, AgentEvent(EventType.AGENT_COMPLETED, "qa").to_json())

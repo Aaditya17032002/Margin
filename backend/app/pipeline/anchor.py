@@ -51,7 +51,7 @@ def _squash(text: str) -> str:
 
 @dataclass(frozen=True)
 class Anchor:
-    """Where a quote lives: page, the lines it spans, and how sure we are."""
+    """Where a quote lives: document, page, the lines it spans, and how sure we are."""
 
     page: int
     section: str
@@ -59,6 +59,10 @@ class Anchor:
     last_line: int
     score: float
     bbox: dict[str, float]
+    #: Which document in the package. Empty for a single-document analysis,
+    #: which is what every citation written before packages existed looks like.
+    document_id: str = ""
+    document_name: str = ""
 
     @property
     def lines(self) -> list[int]:
@@ -105,13 +109,18 @@ class CitationAnchor:
             if best is not None and score <= best.score:
                 continue
             first, last = self._span(offsets, lines, start, end)
+            source = self._pages[page_index]
             best = Anchor(
-                page=page_index + 1,
+                # Page numbers restart per document, so a citation is only
+                # unambiguous with the document beside it.
+                page=int(source.get("page") or (page_index + 1)),
                 section=self._section_for(page_index, first),
                 first_line=first,
                 last_line=last,
                 score=round(score, 3),
                 bbox=line_bbox(first, last, len(lines)),
+                document_id=str(source.get("documentId") or ""),
+                document_name=str(source.get("documentName") or ""),
             )
         return best
 
@@ -152,10 +161,18 @@ class CitationAnchor:
 
     def _section_for(self, page_index: int, line_index: int) -> str:
         """The nearest heading at or above the matched line, searching back
-        through earlier pages when the clause opens a page."""
+        through earlier pages when the clause opens a page.
+
+        The search stops at the document boundary. In a package the previous
+        page may belong to a different attachment entirely, and inheriting its
+        heading would put a confident, wrong section on the citation.
+        """
         from app.pipeline.layout import find_heading
 
+        document = str(self._pages[page_index].get("documentId") or "")
         for index in range(page_index, -1, -1):
+            if str(self._pages[index].get("documentId") or "") != document:
+                break
             lines = self._pages[index].get("lines", [])
             upto = line_index if index == page_index else len(lines) - 1
             for line_no in range(min(upto, len(lines) - 1), -1, -1):
@@ -183,6 +200,8 @@ def resolve_citation(
     if found:
         return {
             "page": found.page,
+            "documentId": found.document_id,
+            "documentName": found.document_name,
             # The document's own heading beats the model's paraphrase of it,
             # but a model that named a section we could not detect is still
             # better than nothing.
@@ -197,6 +216,8 @@ def resolve_citation(
     fallback = fallback or {}
     return {
         "page": int(fallback.get("page") or claimed_page or 1),
+        "documentId": str(fallback.get("documentId") or ""),
+        "documentName": str(fallback.get("documentName") or ""),
         "section": claimed_section or str(fallback.get("section") or ""),
         "quote": quote,
         "bbox": fallback.get("bbox") or {"x": 0.06, "y": 0.04, "w": 0.88, "h": 0.05},

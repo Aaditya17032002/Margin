@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import orjson
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.events import AgentEvent, EventType
@@ -18,10 +19,14 @@ from app.db.models.activity import ActivityLog
 from app.db.models.analysis import Analysis
 from app.db.models.document import Document
 from app.db.models.matrix_row import MatrixRow
+from app.db.models.doc_chunk import DocChunk
 from app.db.models.notification import Notification
 from app.db.models.question import Question
 from app.db.models.user import User
-from app.pipeline.ingest import full_pipeline_from_text
+from app.pipeline.corpus import Corpus, build_corpus
+from app.pipeline.coverage import CoverageLedger, summarise as coverage_summary
+from app.pipeline.ingest import embed_chunks
+from app.pipeline.sweep import sweep_chunks
 from app.providers.base import ChunkResult
 from app.workers import derive
 from app.workers.schedule import build_schedule
@@ -49,18 +54,33 @@ PLACEHOLDER_TEXT = (
 )
 
 
-async def _document_text(db: AsyncSession, analysis: Analysis) -> tuple[str, str]:
-    """The base document's extracted text, plus the filename to report."""
+async def _package(db: AsyncSession, analysis: Analysis) -> Corpus:
+    """Every document in the pursuit, not just the base one.
+
+    The previous version filtered to ``doc_kind == "base"``, so a package of a
+    base RFP and twelve attachments was read as one document and the other
+    twelve were stored and ignored.
+    """
     result = await db.execute(
         select(Document)
-        .where(Document.analysis_id == analysis.id, Document.doc_kind == "base")
-        .order_by(Document.version.desc())
+        .where(Document.analysis_id == analysis.id)
+        .order_by(Document.created_at.asc())
     )
-    document = result.scalars().first()
-    if document and document.raw_text:
-        return document.raw_text, document.file_name
-    filename = (document.file_name if document else analysis.file_name) or "document.pdf"
-    return PLACEHOLDER_TEXT, filename
+    documents = list(result.scalars().all())
+    corpus = build_corpus(documents)
+
+    if not corpus.chunks:
+        # Nothing readable anywhere. The run still happens — the reader is told
+        # plainly rather than shown an empty analysis with no explanation.
+        placeholder = SimpleNamespace(
+            id="",
+            file_name=(analysis.file_name or "document.pdf"),
+            doc_kind="base",
+            version=1,
+            raw_text=PLACEHOLDER_TEXT,
+        )
+        corpus = build_corpus([placeholder])
+    return corpus
 
 
 async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
@@ -80,20 +100,28 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
             analysis.stage = "analyzing"
             await db.commit()
 
-            # ── Step 1: the document itself ──────────────────────────────
-            raw_text, filename = await _document_text(db, analysis)
-            layout, _embeddings = await full_pipeline_from_text(raw_text, filename)
+            # ── Step 1: the whole package ────────────────────────────────
+            corpus = await _package(db, analysis)
+            embeddings = await embed_chunks(
+                [ChunkResult(text=c.text, page=c.page, section_path=c.section_path) for c in corpus.chunks]
+            )
+            await _persist_chunks(db, analysis, corpus, embeddings)
 
-            chunks = layout.chunks or [
-                ChunkResult(text=raw_text[:400], page=1, section_path="Section A")
-            ]
+            # ── Step 2: the deterministic sweep ──────────────────────────
+            # Before any model runs, and over every chunk. This is what makes
+            # coverage a fact rather than an estimate.
+            sweep_result = sweep_chunks(corpus.chunks)
+            ledger = CoverageLedger(corpus=corpus)
+            ledger.record_scanned(sweep_result.visited)
 
-            # ── Step 2: the agent roster ─────────────────────────────────
+            # ── Step 3: the agent roster ─────────────────────────────────
             orchestration = await run_orchestration(
                 analysis_id=analysis_id,
                 mode=analysis.mode,
-                chunks=chunks,
-                pages=layout.pages,
+                corpus=corpus,
+                embeddings=embeddings,
+                sweep=sweep_result,
+                ledger=ledger,
                 redis=redis,
             )
 
@@ -114,6 +142,11 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
             analysis.risks = derive.risk_items(findings.get("risks", []))
             # The calendar is built on every run, whatever the bid decision:
             # a team decides *because* they can see the dates.
+            # The ledger closes here: every pass that could record what it read
+            # has run by now.
+            coverage = ledger.build()
+            analysis.coverage = coverage
+
             analysis.dates = build_schedule(orchestration.get("dates") or [])
             analysis.summary = derive.summary(analysis.title, findings, gate_list)
 
@@ -126,9 +159,16 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
             research_note = _research_note(research)
             if research_note:
                 analysis.summary = f"{analysis.summary} {research_note}"
-
-            analysis.page_count = layout.page_count
-            analysis.pages = layout.pages
+            # Coverage leads the summary: what was read is the precondition for
+            # trusting anything that follows it.
+            analysis.summary = f"{coverage_summary(coverage)} {analysis.summary}".strip()
+            analysis.page_count = corpus.page_count
+            analysis.pages = corpus.pages_for_anchor()
+            analysis.sweep = {
+                "at": coverage["at"],
+                "counts": sweep_result.by_kind(),
+                "total": len(sweep_result.hits),
+            }
             analysis.stage = "review"
             analysis.updated_at = datetime.now(UTC)
 
@@ -172,6 +212,37 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
         await _mark_failed(analysis_id)
         await redis.publish(channel, AgentEvent(EventType.RUN_ERROR, "orchestrator", {"error": str(e)}).to_json())
         return {"error": str(e)}
+
+
+async def _persist_chunks(
+    db: AsyncSession, analysis: Analysis, corpus: Corpus, embeddings: list[list[float]]
+) -> None:
+    """Store the corpus so later passes do not have to re-read the package.
+
+    Embeddings were previously computed on every run and discarded — the
+    variable was assigned and never used, while `doc_chunks`, the pgvector
+    column and the retriever all sat written and uncalled.
+    """
+    await db.execute(delete(DocChunk).where(DocChunk.analysis_id == analysis.id))
+    for index, chunk in enumerate(corpus.chunks):
+        if not chunk.document_id:
+            continue  # the placeholder corpus has no document behind it
+        db.add(
+            DocChunk(
+                id=f"dc_{uuid.uuid4().hex[:12]}",
+                document_id=chunk.document_id,
+                analysis_id=analysis.id,
+                org_id=analysis.org_id,
+                text=chunk.text,
+                page=chunk.page,
+                section_path=chunk.section_path[:500],
+                bbox=chunk.bbox,
+                chunk_index=chunk.chunk_index,
+                embedding=embeddings[index] if index < len(embeddings) else None,
+            )
+        )
+    await db.flush()
+    logger.info("chunks_persisted", analysis_id=analysis.id, chunks=len(corpus.chunks))
 
 
 async def _write_matrix_rows(db: AsyncSession, analysis: Analysis, rows: list[dict]) -> None:

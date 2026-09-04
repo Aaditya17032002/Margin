@@ -108,15 +108,44 @@ def _parse_json_object(text: str) -> dict[str, Any]:
 
 
 def _excerpt(chunks: list[ChunkResult], limit: int = 70_000) -> str:
+    """The passages a specialist reads, marked with where each came from.
+
+    The limit is a context-window guard, not a reading strategy: chunks arrive
+    already chosen by retrieval over the whole package. It used to be the only
+    thing deciding what an agent saw, which meant every agent read the first
+    ~22 pages of the base document and nothing else.
+    """
     parts: list[str] = []
     used = 0
     for chunk in chunks:
         block = f"[p.{chunk.page} {chunk.section_path}]\n{chunk.text}\n"
         if used + len(block) > limit:
+            logger.warning("excerpt_truncated", chunks_used=len(parts), chunks_given=len(chunks))
             break
         parts.append(block)
         used += len(block)
     return "\n".join(parts) if parts else ""
+
+
+def _sweep_block(hits: list) -> str:
+    """What the deterministic pass found across the *whole* package.
+
+    Retrieval shows a specialist what looked relevant. This shows it what the
+    rules found everywhere, including in the pages retrieval did not rank —
+    which is how a page limit stated on page 300 reaches an agent that was
+    reading Section L.
+    """
+    if not hits:
+        return ""
+    lines = [
+        f"- [{hit.kind}] p.{hit.page} {hit.section}: {hit.text}"
+        for hit in hits
+    ]
+    return (
+        "\nPatterns found by a deterministic scan of every page in the package. "
+        "Treat these as leads to confirm against the excerpt, not as findings:\n"
+        + "\n".join(lines)
+    )
 
 
 def _ground(
@@ -329,7 +358,10 @@ class AzureAgentProvider(AgentProvider):
             {
                 "event": "reasoning_tick",
                 "agent": agent_id,
-                "text": f"Reading the solicitation for {agent_id} findings.",
+                "text": (
+                    f"Reading {len(chunks)} passages across the package"
+                    + (f", with {len(kwargs.get('sweep_hits') or [])} scan leads." if kwargs.get("sweep_hits") else ".")
+                ),
             },
         ]
         instruction = SPECIALIST_INSTRUCTIONS.get(
@@ -340,6 +372,8 @@ class AzureAgentProvider(AgentProvider):
         # model. Without an anchor the extractor still runs, it just cannot
         # claim any of its citations are located.
         anchor: CitationAnchor | None = kwargs.get("anchor")
+        sweep_hits = kwargs.get("sweep_hits") or []
+        excerpt = f"{excerpt}\n{_sweep_block(sweep_hits)}" if sweep_hits else excerpt
         if agent_id == "dates":
             findings = await self._extract_dates(instruction, excerpt, chunks, anchor)
         elif agent_id == "qa":

@@ -93,3 +93,10 @@ class Analysis(UUIDMixin, SoftDeleteMixin, Base):
     #: External claims and document clauses must never be shown as the same kind
     #: of thing, so they are not stored as the same kind of thing either.
     research: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    #: What was read, by what, and what was not. Counted from chunk records
+    #: rather than estimated — the claim has to be falsifiable to be worth
+    #: making. Shape: {at, totals, documents[], byAgent, complete}.
+    coverage: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    #: Deterministic sweep totals for this run, so a drop in what the rules
+    #: find is visible without re-running the pass.
+    sweep: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)

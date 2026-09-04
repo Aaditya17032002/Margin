@@ -235,6 +235,54 @@ export interface ActivityEntry {
   analysisId?: string;
 }
 
+/**
+ * What was read, and what was not.
+ *
+ * Two numbers rather than one. `pagesScanned` is everything the deterministic
+ * sweep visited; `pagesAnalysed` is the narrower set a specialist actually
+ * reasoned over. A single "100% analysed" figure would be a claim the product
+ * cannot support, so the shape keeps them apart.
+ */
+export interface CoverageTotals {
+  documents: number;
+  emptyDocuments: number;
+  pages: number;
+  pagesScanned: number;
+  pagesAnalysed: number;
+  chunks: number;
+  chunksAnalysed: number;
+  chunksScanned: number;
+  chunksUnreached: number;
+}
+
+export type CoverageState = "analysed" | "scanned" | "no_text" | "unreached";
+
+export interface CoverageDocument {
+  documentId: string;
+  name: string;
+  kind: "base" | "attachment" | "amendment" | "response" | string;
+  pages: number;
+  /** The document's worst case, not its average. */
+  state: CoverageState;
+  pagesAnalysed: number;
+  chunks: number;
+  chunksAnalysed: number;
+  chunksUnreached: number;
+  /** Contiguous page runs no pass reached, as [start, end] pairs. */
+  unreachedPages: [number, number][];
+  note?: string;
+}
+
+export interface Coverage {
+  at?: string | null;
+  totals: CoverageTotals;
+  documents: CoverageDocument[];
+  /** Specialist id → how many passages it had in context. */
+  byAgent: Record<string, number>;
+  /** Every passage reached and every document readable. */
+  complete: boolean;
+}
+
 export interface Analysis {
   id: string;
   title: string;
@@ -277,6 +325,8 @@ export interface Analysis {
   amendments: AmendmentRecord[];
   pages: DocumentPage[];
   versions: { id: string; label: string; at: string; author: string; note: string }[];
+  /** The reading ledger for the last run. Absent on an analysis that has not run. */
+  coverage?: Coverage;
   /** Only a deep-research pass fills this in; other modes leave it empty. */
   research?: ExternalResearch;
 }

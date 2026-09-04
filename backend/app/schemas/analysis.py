@@ -8,6 +8,7 @@ from app.schemas.common import (
     CamelModel,
     Citation,
     Clin,
+    Coverage,
     DocType,
     DocumentPage,
     EvaluationFactor,
@@ -105,6 +106,8 @@ class AnalysisResponse(CamelModel):
     amendments: list[AmendmentRecord]
     pages: list[DocumentPage]
     versions: list[VersionRecord]
+    #: What was read and what was not. Empty on an analysis that has not run.
+    coverage: Coverage = Coverage()
     #: Only a deep-research pass fills this in; every other mode leaves it at
     #: its "not_requested" default.
     research: ExternalResearch = ExternalResearch()

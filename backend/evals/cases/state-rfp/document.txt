@@ -1,0 +1,33 @@
+CITY OF NEW YORK
+DEPARTMENT OF TRANSPORTATION
+Request for Proposals — ARTS 311 CRM Systems Integrator
+PIN: 84126RFP0031
+Release Date: March 3, 2026
+
+1. INTRODUCTION
+The Department seeks a qualified Systems Integrator to modernize its 311 CRM platform.
+This procurement is conducted under the Procurement Policy Board Rules.
+2. KEY DATESPre-proposal conference: March 24, 2026 at 10:00 AM.
+Written questions are due 2026-04-02.
+Proposals must be received no later than 2026-05-15 at 2:00 PM.
+3. MINIMUM QUALIFICATIONS
+Proposers shall have completed a minimum of three (3) similar engagements in the past five years.
+The Proposer must maintain an active registration in PASSPort prior to award.
+Proposers are required to hold all licenses required by New York State law.
+4. PROPOSAL FORMAT
+Proposals shall not exceed 60 pages excluding required forms and resumes.
+Text shall be Arial 11-point, double-spaced, with 1-inch margins.Proposals shall be submitted in three parts: Technical Proposal, Price Proposal, and Required Forms.
+Each part shall be uploaded to PASSPort as a separate PDF not exceeding 25 MB in size.
+5. REQUIRED FORMS
+Proposers must submit Attachment A — Acknowledgment of Addenda.
+Proposers must submit Attachment B — Doing Business Data Form.
+Proposers must complete the MWBE Utilization Plan as described in Section 7.
+6. EVALUATION
+Proposals will be evaluated on Technical Approach (50%), Experience (30%), and Price (20%).
+Technical Approach is more important than Price.
+The City reserves the right to make an award on the basis of initial proposals.7. MWBE PARTICIPATION
+The MWBE participation goal for this contract is 30 percent.
+Proposers shall certify their MWBE status in accordance with Local Law 1 of 2013.
+8. SECURITY
+The Contractor may not export, process, access or store City Data outside the United States.
+The Contractor is responsible for adhering to the City's IT security policies.

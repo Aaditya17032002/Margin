@@ -1,0 +1,16 @@
+{
+  "_note": "Floors, not targets. Set from measured performance and raised deliberately; never lowered to make a build pass. A drop means the sweep got worse and the corpus is telling you so.",
+  "overallRecall": 0.9,
+  "recall": {
+    "obligation": 0.9,
+    "instruction": 0.8,
+    "limit": 0.9,
+    "form": 0.9,
+    "certification": 0.8,
+    "clause": 0.9,
+    "date": 0.9,
+    "evaluation": 0.85,
+    "cross_reference": 0.7,
+    "volume": 0.8
+  }
+}

@@ -1,6 +1,7 @@
 export const WORKSPACE_TABS = [
   { id: "go-no-go", label: "Go / No-Go" },
   { id: "overview", label: "Overview & Dates" },
+  { id: "coverage", label: "Coverage" },
   { id: "scope", label: "Scope" },
   { id: "matrix", label: "Compliance Matrix" },
   { id: "legal", label: "Legal & Regulatory" },
