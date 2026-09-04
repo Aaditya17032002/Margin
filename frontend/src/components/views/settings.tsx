@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Check, Contrast, Moon, RotateCcw, Sun, Trash2 } from "lucide-react";
 
-import { cn, formatBytes } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { longDate } from "@/lib/dates";
 import { useNow } from "@/hooks/use-now";
 import { MODES } from "@/data/agents";
@@ -24,18 +24,19 @@ import {
   SettingRow,
   Switch,
 } from "@/components/ui/controls";
-import { Callout } from "@/components/ui/feedback";
 import { ConfirmDialog } from "@/components/ui/overlay";
 import { notify } from "@/components/ui/toaster";
 import { useSessionStore } from "@/stores/session";
 import { useIntegrationsStore, usePrefsStore, useTeamStore } from "@/stores/workspace";
 import { loadWorkspace } from "@/stores";
 import type { Appearance, Prefs } from "@/types";
+import { PermissionsSection, RetentionSection } from "@/components/views/governance";
 
 const TABS = [
   { id: "account", label: "Account" },
   { id: "organization", label: "Organisation" },
   { id: "roles", label: "Team & roles" },
+  { id: "permissions", label: "Permissions" },
   { id: "integrations", label: "Integrations" },
   { id: "notifications", label: "Notifications" },
   { id: "appearance", label: "Appearance" },
@@ -105,13 +106,14 @@ export function SettingsView() {
           {tab === "account" ? <AccountSection /> : null}
           {tab === "organization" ? <OrganizationSection /> : null}
           {tab === "roles" ? <RolesSection /> : null}
+          {tab === "permissions" ? <PermissionsSection /> : null}
           {tab === "integrations" ? <IntegrationsSection /> : null}
           {tab === "notifications" ? <NotificationsSection /> : null}
           {tab === "appearance" ? <AppearanceSection /> : null}
           {tab === "analysis" ? <AnalysisSection /> : null}
           {tab === "billing" ? <BillingSection /> : null}
           {tab === "security" ? <SecuritySection /> : null}
-          {tab === "data" ? <DataSection /> : null}
+          {tab === "data" ? <RetentionSection /> : null}
           {tab === "danger" ? <DangerSection /> : null}
         </div>
       </div>
@@ -688,56 +690,6 @@ function SecuritySection() {
         </ul>
       </Panel>
     </div>
-  );
-}
-
-function DataSection() {
-  return (
-    <Panel>
-      <PanelHeader title="Data & retention" description="What Margin keeps, and for how long." />
-      <div className="space-y-4 p-5">
-        <Callout tone="slate" title="Source documents are never copied">
-          Margin stores citations — a page, a section, and the quoted line — not the file itself. Disconnecting a
-          source leaves your findings intact and their sources unreachable.
-        </Callout>
-
-        <div className="divide-y divide-line">
-          <SettingRow
-            label="Retain decided analyses"
-            description="How long a decided bid stays in the workspace."
-            control={
-              <Select defaultValue="24">
-                <SelectTrigger className="w-40" aria-label="Retention period">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="12">12 months</SelectItem>
-                  <SelectItem value="24">24 months</SelectItem>
-                  <SelectItem value="forever">Indefinitely</SelectItem>
-                </SelectContent>
-              </Select>
-            }
-          />
-          <SettingRow
-            label="Export everything"
-            description="A single archive of analyses, matrices, questions, and the audit trail."
-            control={
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() =>
-                  notify.success("Archive requested.", {
-                    description: `Approximately ${formatBytes(48_200_000)} — you will get an email when it is ready.`,
-                  })
-                }
-              >
-                Request archive
-              </Button>
-            }
-          />
-        </div>
-      </div>
-    </Panel>
   );
 }
 

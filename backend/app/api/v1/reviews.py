@@ -25,12 +25,14 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 
+from app.core import permissions
 from app.core.deps import CurrentUser, DbSession
 from app.core.logging import get_logger
 from app.db.models.analysis import Analysis
 from app.db.models.requirement import Requirement
 from app.db.models.response_check import ResponseCheck
 from app.db.models.review import CHARTERS, ReviewFinding, ReviewRound
+from app.pipeline import review_report
 from app.schemas.resources import (
     ReviewCloseRequest,
     ReviewFindingCreate,
@@ -267,7 +269,13 @@ async def close_round(
     takes a written reason and is recorded as an override, so a clean pass and
     an overridden one can never be mistaken for each other later.
     """
+    permissions.require(user.role, "sign_off_review")
     round_row = await _round(db, analysis_id, round_id, user.org_id)
+    # Enforced apart from the role matrix because it depends on who opened the
+    # round rather than on who is asking — and admins are not exempt.
+    permissions.require_separation(
+        actor_id=user.id, opened_by=round_row.opened_by, action="Signing off a review round"
+    )
     if round_row.status == "closed":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="That round is already closed.")
 
@@ -381,3 +389,31 @@ async def _round(db, analysis_id: str, round_id: str, org_id: str) -> ReviewRoun
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Review round not found")
     return row
+
+
+@router.get("/analyses/{analysis_id}/reviews/comparison")
+async def compare_rounds(analysis_id: str, user: CurrentUser, db: DbSession):
+    """The rounds read against each other rather than one at a time.
+
+    Whether must-fix findings were fixed or merely accepted, what came back
+    after somebody said it was fixed, what a closed round left open, and
+    whether a sign-off still covers the draft about to be submitted. None of
+    it is visible in a per-round view, which is why review programmes tend to
+    produce three lists and no argument.
+    """
+    analysis = await _analysis(db, analysis_id, user.org_id)
+    rounds = (
+        await db.execute(
+            select(ReviewRound).where(
+                ReviewRound.analysis_id == analysis_id, ReviewRound.org_id == user.org_id
+            )
+        )
+    ).scalars().all()
+    findings = (
+        await db.execute(select(ReviewFinding).where(ReviewFinding.analysis_id == analysis_id))
+    ).scalars().all()
+    return review_report.build(
+        list(rounds),
+        list(findings),
+        current_version=int((analysis.response or {}).get("version") or 0),
+    )

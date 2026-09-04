@@ -16,6 +16,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core import permissions
 from app.core.deps import CurrentUser, DbSession
 from app.core.documents import store_document, to_response as _document_response
 from app.core.logging import get_logger
@@ -220,6 +221,10 @@ async def decide_check(
 
     now = datetime.now(UTC)
     update = body.model_dump(exclude_unset=True, by_alias=False)
+    if update.get("confirmed") and row.risk in ("high", "medium"):
+        # Signing off a mandatory requirement is the authority a reviewer role
+        # exists for. Drafting against one is not.
+        permissions.require(user.role, "clear_requirement")
     # Read before the edit: `decided_by` and `detail` are about to become the
     # human's, and the label needs what the machine said.
     previous = row.status

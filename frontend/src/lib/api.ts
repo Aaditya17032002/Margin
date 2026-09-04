@@ -38,7 +38,11 @@ import type {
   ReviewFinding,
   ReviewRound,
   ReviewVerdict,
+  ReviewComparison,
   FindingSeverity,
+  PermissionModel,
+  RetentionView,
+  PiiScan,
   Role,
   SessionUser,
   Template,
@@ -306,8 +310,10 @@ export const matrixApi = {
    * plain anchor would not carry it. The CSV text comes back and the caller
    * saves it.
    */
-  exportCsv: (analysisId: string) =>
-    apiText(`/api/v1/analyses/${analysisId}/matrix/export`),
+  exportCsv: (analysisId: string, opts: { redact?: boolean } = {}) =>
+    apiText(
+      `/api/v1/analyses/${analysisId}/matrix/export${opts.redact ? "?redact=true" : ""}`,
+    ),
 };
 
 /* ------------------------------------------------------------------ */
@@ -324,6 +330,50 @@ export const governanceApi = {
   /** Everything that happened to this analysis, newest first. */
   audit: (analysisId: string) =>
     api<{ entries: AuditEntry[]; total: number }>(`/api/v1/analyses/${analysisId}/audit`),
+
+  /**
+   * The audit trail as a spreadsheet, oldest first.
+   *
+   * Fetched rather than linked, like every other export: the endpoint needs
+   * the bearer token and a plain anchor would not carry it.
+   */
+  auditCsv: (analysisId: string) => apiText(`/api/v1/analyses/${analysisId}/audit/export`),
+
+  /** Who can do what, and what the signed-in person in particular can do. */
+  permissions: () => api<PermissionModel>("/api/v1/governance/permissions"),
+
+  /** The retention policy, and exactly what it would dispose of today. */
+  retention: () => api<RetentionView>("/api/v1/governance/retention"),
+
+  /** Change the policy. Refused with every problem at once, not the first. */
+  setRetention: (body: Partial<{
+    enabled: boolean;
+    sourceDocumentsDays: number;
+    extractedTextDays: number;
+    responseDraftsDays: number;
+    minimumHoldDays: number;
+  }>) => api<RetentionView>("/api/v1/governance/retention", { method: "PUT", body }),
+
+  /**
+   * Actually dispose. `confirm` is the number of items the caller saw in the
+   * preview — if the world moved in between, the disposal is refused rather
+   * than run against a set nobody looked at.
+   */
+  applyRetention: (confirm: number, note = "") =>
+    api<{ disposed: unknown[]; count: number; at: string }>(
+      "/api/v1/governance/retention/apply",
+      { method: "POST", body: { confirm, note } },
+    ),
+
+  /** Put a pursuit out of reach of every retention timer, or let it back in. */
+  legalHold: (analysisId: string, hold: boolean, reason = "") =>
+    api<{ analysisId: string; legalHold: boolean; reason: string | null }>(
+      `/api/v1/analyses/${analysisId}/legal-hold`,
+      { method: "POST", body: { hold, reason } },
+    ),
+
+  /** What in this package looks like personal data, and where. */
+  pii: (analysisId: string) => api<PiiScan>(`/api/v1/analyses/${analysisId}/pii`),
 };
 
 /* ------------------------------------------------------------------ */
@@ -457,6 +507,14 @@ export const reviewsApi = {
     api<{ roundId: string; responseVersion: number; items: WhiteGloveItem[] }>(
       `/api/v1/analyses/${analysisId}/reviews/${roundId}/checklist`,
     ),
+
+  /**
+   * The rounds read against each other rather than one at a time: what came
+   * back after somebody said it was fixed, what a closed round left open, and
+   * whether a sign-off still covers the draft about to be submitted.
+   */
+  comparison: (analysisId: string) =>
+    api<ReviewComparison>(`/api/v1/analyses/${analysisId}/reviews/comparison`),
 };
 
 /* ------------------------------------------------------------------ */

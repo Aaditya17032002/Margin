@@ -19,6 +19,7 @@ import type {
   FindingSeverity,
   ReviewColour,
   ReviewFinding,
+  ReviewComparison,
   ReviewRound,
   ReviewVerdict,
   WhiteGloveItem,
@@ -161,6 +162,8 @@ export function ReviewsPanel({ analysis }: { analysis: Analysis }) {
           </div>
         ) : null}
       </Panel>
+
+      {rounds.length > 0 ? <RoundComparison analysis={analysis} reloads={reloads} /> : null}
 
       {rounds.length === 0 ? (
         <EmptyState
@@ -583,3 +586,139 @@ function WhiteGloveChecklist({ analysis, round }: { analysis: Analysis; round: R
     </div>
   );
 }
+
+
+/**
+ * The rounds read against each other.
+ *
+ * A per-round view answers "what did Red find". It cannot answer the three
+ * questions a capture lead actually asks between Pink and Gold: did the last
+ * round's findings get fixed or merely closed, is anything coming back, and
+ * does the sign-off still cover the draft about to be sent.
+ */
+function RoundComparison({ analysis, reloads }: { analysis: Analysis; reloads: number }) {
+  const [report, setReport] = React.useState<ReviewComparison | null>(null);
+
+  React.useEffect(() => {
+    let live = true;
+    reviewsApi
+      .comparison(analysis.id)
+      .then((result) => {
+        if (live) setReport(result);
+      })
+      .catch(() => {
+        if (live) setReport(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [analysis.id, reloads]);
+
+  if (!report) return null;
+
+  const { trend, recurring, carried, reviewers } = report;
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="Round on round"
+        description={trend.detail}
+        actions={
+          <Badge tone={TREND_TONE[trend.direction]}>{TREND_LABEL[trend.direction]}</Badge>
+        }
+      />
+
+      <div className="space-y-4 px-5 pb-5">
+        {recurring.length > 0 ? (
+          <Callout
+            tone="seal"
+            title={`${recurring.length} ${pluralize(recurring.length, "finding")} came back`}
+          >
+            <p className="mb-2">
+              Raised, marked resolved, and raised again in a later round. The fix did not hold —
+              which is the one thing a review programme can tell you that a single round cannot.
+            </p>
+            <ul className="space-y-2">
+              {recurring.map((item) => (
+                <li key={`${item.requirementId}-${item.againRoundId}`}>
+                  <span className="font-medium">{item.againText}</span>
+                  <span className="block text-ink-soft">{item.why}</span>
+                </li>
+              ))}
+            </ul>
+          </Callout>
+        ) : null}
+
+        {carried.length > 0 ? (
+          <Callout
+            tone="ochre"
+            title={`${carried.length} must-fix ${pluralize(carried.length, "finding")} left open by a closed round`}
+          >
+            <p className="mb-2">
+              A closed round stops being looked at, so nothing will raise these again on its own.
+            </p>
+            <ul className="space-y-2">
+              {carried.map((item) => (
+                <li key={item.findingId}>
+                  <span className="font-medium">{item.text}</span>
+                  {item.location ? (
+                    <span className="text-ink-soft"> — {item.location}</span>
+                  ) : null}
+                  <span className="block text-ink-soft">
+                    {COLOUR_LABEL[item.colour]} round.
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Callout>
+        ) : null}
+
+        <div className="space-y-2">
+          {report.rounds.map((round) => (
+            <Well key={round.roundId}>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <Badge tone={COLOUR_TONE[round.colour]}>{COLOUR_LABEL[round.colour]}</Badge>
+                <span className="text-ink-soft">Draft {round.responseVersion}</span>
+                <span className="text-ink-soft">
+                  {round.counts.bySeverity.must_fix} must fix ·{" "}
+                  {round.counts.bySeverity.should_fix} should fix ·{" "}
+                  {round.counts.bySeverity.consider} to consider
+                </span>
+                {round.stale ? <Badge tone="ochre">Stale</Badge> : null}
+                {round.overridden ? <Badge tone="seal">Override</Badge> : null}
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-ink-soft">{round.note}</p>
+            </Well>
+          ))}
+        </div>
+
+        {reviewers.length > 0 ? (
+          <div className="text-xs text-ink-soft">
+            {reviewers.map((person) => (
+              <span key={person.reviewer} className="mr-3 inline-block">
+                {person.reviewer}: {person.raised} raised across{" "}
+                {person.rounds || 1} {pluralize(person.rounds || 1, "round")}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </Panel>
+  );
+}
+
+const TREND_LABEL: Record<ReviewComparison["trend"]["direction"], string> = {
+  improving: "Improving",
+  worsening: "Getting worse",
+  flat: "Flat",
+  single: "One closed round",
+  unknown: "Nothing closed yet",
+};
+
+const TREND_TONE: Record<ReviewComparison["trend"]["direction"], "leaf" | "seal" | "ochre" | "neutral"> = {
+  improving: "leaf",
+  worsening: "seal",
+  flat: "ochre",
+  single: "neutral",
+  unknown: "neutral",
+};

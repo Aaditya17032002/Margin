@@ -1061,3 +1061,154 @@ export interface Org {
   duns: string;
   cage: string;
 }
+
+/* ------------------------------------------------------------------ */
+/* Reading the review rounds against each other                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One round is a list of findings. Three rounds are an argument about whether
+ * the proposal is getting better, and nothing in a per-round view answers it.
+ */
+export interface RoundReport {
+  roundId: string;
+  colour: ReviewColour;
+  responseVersion: number;
+  status: "open" | "closed";
+  verdict?: ReviewVerdict | null;
+  openedAt: string;
+  closedAt?: string | null;
+  reviewers: string[];
+  counts: {
+    total: number;
+    bySeverity: Record<FindingSeverity, number>;
+    byState: Record<FindingState, number>;
+    /** Fixed versus accepted is the distinction the report turns on. */
+    mustFixFixed: number;
+    mustFixAccepted: number;
+  };
+  openMustFix: number;
+  overridden: boolean;
+  overrideReason?: string | null;
+  /** A newer draft exists than the one this round read. */
+  stale: boolean;
+  note: string;
+}
+
+export interface RecurringFinding {
+  requirementId: string;
+  firstRoundId: string;
+  firstColour: ReviewColour;
+  firstText: string;
+  againRoundId: string;
+  againColour: ReviewColour;
+  againText: string;
+  severity: FindingSeverity;
+  why: string;
+}
+
+export interface CarriedFinding {
+  findingId: string;
+  roundId: string;
+  colour: ReviewColour;
+  text: string;
+  location: string;
+  requirementId?: string | null;
+  why: string;
+}
+
+export interface ReviewComparison {
+  rounds: RoundReport[];
+  /** Raised, marked fixed, and raised again. The fix did not hold. */
+  recurring: RecurringFinding[];
+  /** Must-fix findings a closed round left open, where nobody looks. */
+  carried: CarriedFinding[];
+  reviewers: { reviewer: string; rounds: number; raised: number }[];
+  trend: {
+    direction: "improving" | "worsening" | "flat" | "single" | "unknown";
+    detail: string;
+    roundsClosed?: number;
+    worstVerdict?: ReviewVerdict | null;
+    overrides?: number;
+    stale?: number;
+  };
+  currentVersion: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Governance: permissions, retention, personal data                    */
+/* ------------------------------------------------------------------ */
+
+export type WorkspaceRole = "admin" | "reviewer" | "writer" | "viewer";
+
+export interface PermissionModel {
+  roles: { name: WorkspaceRole; purpose: string; permissions: string[] }[];
+  permissions: { name: string; describes: string; roles: WorkspaceRole[] }[];
+  separationOfDuties: { action: string; rule: string; why: string }[];
+  you: {
+    id: string;
+    role: WorkspaceRole;
+    purpose: string;
+    can: string[];
+    cannot: string[];
+  };
+}
+
+export interface RetentionPolicy {
+  enabled: boolean;
+  source_documents_days: number;
+  extracted_text_days: number;
+  response_drafts_days: number;
+  minimum_hold_days: number;
+}
+
+export interface RetentionCandidate {
+  analysisId: string;
+  analysisTitle: string;
+  class: string;
+  label: string;
+  ageDays: number;
+  dueDays: number;
+  lastActivity: string;
+  detail: string;
+}
+
+export interface RetentionView {
+  enabled: boolean;
+  policy: RetentionPolicy;
+  due: RetentionCandidate[];
+  skipped: { analysisId: string; analysisTitle: string; reason: string }[];
+  counts: Record<string, number>;
+  /** Held whatever the policy says. A promise nobody can see is one nobody believes. */
+  neverDisposed: string[];
+  problems: string[];
+  classes: { name: string; label: string; note: string }[];
+  floorMinimumDays: number;
+  canEdit: boolean;
+}
+
+export interface PiiFinding {
+  kind: string;
+  label: string;
+  note: string;
+  start: number;
+  end: number;
+  /** Masked. Listing every SSN in order to warn about them would be absurd. */
+  preview: string;
+  context: string;
+}
+
+export interface PiiScan {
+  analysisId: string;
+  documents: {
+    documentId: string;
+    fileName: string;
+    kind: string;
+    total: number;
+    counts: Record<string, number>;
+    findings: PiiFinding[];
+  }[];
+  counts: Record<string, number>;
+  total: number;
+  kinds: { kind: string; label: string; note: string }[];
+}

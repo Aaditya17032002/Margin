@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 
+from app.core import permissions
 from app.core.deps import CurrentUser, DbSession, RedisClient
 from app.core.queue import enqueue
 from app.db.models.analysis import Analysis
@@ -47,6 +48,10 @@ async def generate_report(
     db: DbSession,
     redis: RedisClient,
 ):
+    # A report leaves the product. Whoever can generate one can hand the
+    # package's contents to anybody, which is a different authority from being
+    # able to read it here.
+    permissions.require(user.role, "export")
     result = await db.execute(
         select(Analysis).where(Analysis.id == analysis_id, Analysis.org_id == user.org_id, Analysis.deleted_at.is_(None))
     )

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
 import { ArrowRight, CircleSlash, ExternalLink, FileDiff, Globe, MessageSquarePlus, Minus, Plus } from "lucide-react";
 
-import { cn, formatCurrency, pluralize } from "@/lib/utils";
+import { cn, formatCurrency, pluralize, saveTextFile } from "@/lib/utils";
 import { longDate, relative } from "@/lib/dates";
 import { listItem, staggerList } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import { decisionApi, governanceApi } from "@/lib/api";
 import type {
   Analysis,
   AuditEntry,
+  PiiScan,
   DecisionEvidence,
   GoNoGo,
   ResearchClaim,
@@ -1168,18 +1169,21 @@ function AuditTrail({ analysis }: { analysis: Analysis }) {
         title="The record"
         description="Every change to this analysis, newest first — including the ones Margin made."
         actions={
-          <Select value={scope} onValueChange={setScope}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {scopes.map((name) => (
-                <SelectItem key={name} value={name}>
-                  {name === "all" ? "Everything" : AUDIT_SCOPES[name] ?? name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            <Select value={scope} onValueChange={setScope}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {scopes.map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name === "all" ? "Everything" : AUDIT_SCOPES[name] ?? name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <AuditExport analysisId={analysis.id} />
+          </div>
         }
       />
       <ol className="max-h-[28rem] divide-y divide-line overflow-y-auto">
@@ -1209,6 +1213,103 @@ function AuditTrail({ analysis }: { analysis: Analysis }) {
   );
 }
 
+/**
+ * The trail as a file, oldest first.
+ *
+ * A record that cannot leave the product is one nobody can hand to the person
+ * asking for it, which is the only situation an audit trail exists for.
+ */
+function AuditExport({ analysisId }: { analysisId: string }) {
+  const [busy, setBusy] = React.useState(false);
+  return (
+    <Button
+      variant="quiet"
+      size="sm"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          saveTextFile(`audit-${analysisId}.csv`, await governanceApi.auditCsv(analysisId));
+          notify.success("The record exported.", {
+            description: "Oldest first — a file read as a narrative is read forwards.",
+          });
+        } catch {
+          notify.error("The record could not be exported.");
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {busy ? "Exporting…" : "Export"}
+    </Button>
+  );
+}
+
+/**
+ * What in this package looks like personal data.
+ *
+ * Run before anything leaves the product. Detection is by pattern and
+ * deterministic: a model that sometimes finds an SSN is worse than a regular
+ * expression that always finds that shape, because the failure mode is
+ * invisible. Values are never shown in full — listing every SSN in a document
+ * in order to warn about them would be absurd.
+ */
+function PersonalData({ analysis }: { analysis: Analysis }) {
+  const [scan, setScan] = React.useState<PiiScan | null>(null);
+
+  React.useEffect(() => {
+    let live = true;
+    governanceApi
+      .pii(analysis.id)
+      .then((result) => {
+        if (live) setScan(result);
+      })
+      .catch(() => {
+        if (live) setScan(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [analysis.id, analysis.updatedAt]);
+
+  if (!scan || scan.total === 0) return null;
+
+  const labels = new Map(scan.kinds.map((kind) => [kind.kind, kind.label]));
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="Personal data in this package"
+        description={`${scan.total} span(s) look like personal data. The matrix and the evidence pack can be exported with these replaced.`}
+      />
+      <div className="space-y-3 px-5 pb-5">
+        <div className="flex flex-wrap gap-1.5">
+          {Object.entries(scan.counts).map(([kind, count]) => (
+            <Badge key={kind} tone="ochre" shape="mono">
+              {labels.get(kind) ?? kind}: {count}
+            </Badge>
+          ))}
+        </div>
+        <ul className="space-y-1 text-xs text-ink-soft">
+          {scan.documents
+            .filter((document) => document.total > 0)
+            .map((document) => (
+              <li key={document.documentId}>
+                <span className="font-mono text-2xs text-patina">{document.fileName}</span> —{" "}
+                {document.total} found
+              </li>
+            ))}
+        </ul>
+        <p className="text-2xs leading-relaxed text-ink-faint">
+          Nothing is removed from the documents themselves. Redaction happens on the way out, and
+          each replacement says what it was, because an auditor asking what you took out deserves
+          better than “something”.
+        </p>
+      </div>
+    </Panel>
+  );
+}
+
 const AUDIT_SCOPES: Record<string, string> = {
   run: "Run",
   amendment: "Amendment",
@@ -1224,6 +1325,7 @@ export function VersionsPanel({ analysis }: { analysis: Analysis }) {
   return (
     <div className="space-y-6">
       <AuditTrail analysis={analysis} />
+      <PersonalData analysis={analysis} />
       <div className="grid gap-6 @3xl:grid-cols-2">
       <Panel>
         <PanelHeader title="Version history" description="Every pass Margin made, and every human who changed it." />

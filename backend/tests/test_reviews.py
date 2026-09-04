@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from app.db.models.review import CHARTERS, ReviewFinding, ReviewRound
-from app.pipeline import verification
+from app.pipeline import review_report, verification
 from app.pipeline.verification import BLOCKING, IMPORTANT, ROUTINE
 from app.reports import evidence
 
@@ -251,3 +251,97 @@ def test_every_colour_has_a_charter():
     assert set(CHARTERS) == {"pink", "red", "gold", "white_glove"}
     for colour, charter in CHARTERS.items():
         assert len(charter) > 60, colour
+
+
+# ── Reading the rounds against each other ────────────────────────────────
+
+
+def test_a_finding_that_comes_back_is_reported_as_a_regression():
+    """Raised in Pink, marked fixed, raised again in Red. The single most
+    useful signal a review programme produces, and invisible per-round."""
+    pink = _round(id="rev_pink", colour="pink", response_version=1, opened_at=datetime(2026, 4, 1, tzinfo=UTC))
+    red = _round(id="rev_red", colour="red", response_version=2, opened_at=datetime(2026, 5, 1, tzinfo=UTC))
+    findings = [
+        _finding(id="rf_a", round_id="rev_pink", state="fixed", requirement_id="req_7"),
+        _finding(id="rf_b", round_id="rev_red", state="open", requirement_id="req_7"),
+    ]
+    result = review_report.build([red, pink], findings, current_version=2)
+    assert len(result["recurring"]) == 1
+    again = result["recurring"][0]
+    assert again["firstColour"] == "pink" and again["againColour"] == "red"
+    assert "did not hold" in again["why"]
+
+
+def test_findings_with_no_requirement_are_never_matched_across_rounds():
+    """Guessing at which prose comment is "the same" as another produces a
+    list nobody trusts."""
+    pink = _round(id="rev_pink", colour="pink", response_version=1, opened_at=datetime(2026, 4, 1, tzinfo=UTC))
+    red = _round(id="rev_red", colour="red", response_version=2, opened_at=datetime(2026, 5, 1, tzinfo=UTC))
+    findings = [
+        _finding(id="rf_a", round_id="rev_pink", state="fixed", requirement_id=None),
+        _finding(id="rf_b", round_id="rev_red", state="open", requirement_id=None),
+    ]
+    assert review_report.build([pink, red], findings)["recurring"] == []
+
+
+def test_a_must_fix_left_open_by_a_closed_round_is_surfaced():
+    """A closed round stops being looked at, so nothing raises it again."""
+    row = _round(status="closed", verdict="proceed")
+    result = review_report.build([row], [_finding(state="open", severity="must_fix")])
+    assert len(result["carried"]) == 1
+    assert "stops being looked at" in result["carried"][0]["why"]
+
+
+def test_accepted_must_fixes_are_called_deferrals_not_a_pass():
+    row = _round(status="closed", verdict="proceed")
+    result = review_report.build([row], [_finding(state="accepted", severity="must_fix")])
+    note = result["rounds"][0]["note"]
+    assert "deferrals" in note
+
+
+def test_a_sign_off_against_an_older_draft_is_stale_not_wrong():
+    row = _round(status="closed", verdict="proceed", response_version=2)
+    result = review_report.build([row], [], current_version=4)
+    assert result["rounds"][0]["stale"] is True
+    assert "no longer covers" in result["rounds"][0]["note"]
+
+
+def test_an_override_is_never_reported_as_a_clean_pass():
+    row = _round(status="closed", verdict="proceed", override_reason="Deadline is tomorrow.")
+    result = review_report.build([row], [_finding(state="open", severity="must_fix")])
+    assert result["rounds"][0]["overridden"] is True
+    assert "override, not as a pass" in result["rounds"][0]["note"]
+
+
+def test_the_trend_reads_two_closed_rounds_against_each_other():
+    pink = _round(
+        id="rev_pink", colour="pink", response_version=1, status="closed", verdict="proceed_with_fixes",
+        opened_at=datetime(2026, 4, 1, tzinfo=UTC),
+    )
+    red = _round(
+        id="rev_red", colour="red", response_version=2, status="closed", verdict="proceed",
+        opened_at=datetime(2026, 5, 1, tzinfo=UTC),
+    )
+    findings = [
+        _finding(id="rf_1", round_id="rev_pink", state="fixed", requirement_id="req_1"),
+        _finding(id="rf_2", round_id="rev_pink", state="fixed", requirement_id="req_2"),
+        _finding(id="rf_3", round_id="rev_red", state="fixed", requirement_id="req_3"),
+    ]
+    trend = review_report.build([pink, red], findings, current_version=2)["trend"]
+    assert trend["direction"] == "improving"
+    assert trend["roundsClosed"] == 2
+
+
+def test_a_single_round_is_not_a_trend():
+    trend = review_report.build([_round(status="closed", verdict="proceed")], [])["trend"]
+    assert trend["direction"] == "single"
+    assert "second round" in trend["detail"]
+
+
+def test_a_reviewer_who_raised_nothing_is_still_counted():
+    """A round nobody actually read is a sign-off with nothing behind it."""
+    row = _round(reviewers=["Dana", "Ade"])
+    reviewers = review_report.build([row], [_finding(raised_by="Dana")])["reviewers"]
+    by_name = {r["reviewer"]: r for r in reviewers}
+    assert by_name["Ade"]["rounds"] == 1 and by_name["Ade"]["raised"] == 0
+    assert by_name["Dana"]["raised"] == 1

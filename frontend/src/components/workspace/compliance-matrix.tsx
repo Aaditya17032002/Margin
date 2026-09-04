@@ -619,33 +619,53 @@ function DueDateCell({
   );
 }
 
+/**
+ * Two exports, because they are for two different rooms.
+ *
+ * The ordinary one carries the citation on every row — a matrix that leaves
+ * the product without its citations becomes a list of assertions the moment it
+ * is opened somewhere else. The redacted one runs the personal-data patterns
+ * over every cell first, for the copy that goes to somebody outside the team.
+ * It is a separate button rather than a default because redacting an officer's
+ * email out of a quoted clause makes the quote wrong.
+ */
 function ExportButton({ analysisId, className }: { analysisId?: string; className?: string }) {
-  const [busy, setBusy] = React.useState(false);
+  const [busy, setBusy] = React.useState<"plain" | "redacted" | null>(null);
   if (!analysisId) return null;
+
+  async function run(redact: boolean) {
+    if (!analysisId) return;
+    setBusy(redact ? "redacted" : "plain");
+    try {
+      const csv = await matrixApi.exportCsv(analysisId, { redact });
+      saveTextFile(
+        `compliance-matrix-${analysisId}${redact ? "-redacted" : ""}.csv`,
+        csv,
+      );
+      notify.success(redact ? "Redacted matrix exported." : "Matrix exported.", {
+        description: redact
+          ? "Anything shaped like personal data was replaced, and each replacement says what it was."
+          : "Every row, with the clause and page it came from.",
+      });
+    } catch {
+      notify.error("The matrix could not be exported.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
-    <Button
-      variant="quiet"
-      size="sm"
-      className={className}
-      disabled={busy}
-      onClick={async () => {
-        setBusy(true);
-        try {
-          const csv = await matrixApi.exportCsv(analysisId);
-          saveTextFile(`compliance-matrix-${analysisId}.csv`, csv);
-          notify.success("Matrix exported.", {
-            description: "Every row, with the clause and page it came from.",
-          });
-        } catch {
-          notify.error("The matrix could not be exported.");
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      <Download />
-      {busy ? "Exporting…" : "Export CSV"}
-    </Button>
+    <div className={cn("flex items-center gap-1", className)}>
+      <Button variant="quiet" size="sm" disabled={busy !== null} onClick={() => run(false)}>
+        <Download />
+        {busy === "plain" ? "Exporting…" : "Export CSV"}
+      </Button>
+      <Tooltip content="The same rows with anything shaped like personal data replaced — an SSN, a direct line, a reference's address. For the copy that leaves the building.">
+        <Button variant="quiet" size="sm" disabled={busy !== null} onClick={() => run(true)}>
+          {busy === "redacted" ? "Redacting…" : "Redacted copy"}
+        </Button>
+      </Tooltip>
+    </div>
   );
 }
 

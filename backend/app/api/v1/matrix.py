@@ -21,9 +21,11 @@ from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
+from app.core import permissions
 from app.core.deps import CurrentUser, DbSession
+from app.core.logging import get_logger
 from app.db.models.requirement import Requirement
-from app.pipeline import verdicts
+from app.pipeline import redaction, verdicts
 from app.pipeline.requirements import classify_stakes, classify_type, classify_verification, stable_key
 from app.schemas.resources import (
     BulkMatrixRequest,
@@ -33,6 +35,7 @@ from app.schemas.resources import (
 )
 
 router = APIRouter(tags=["matrix"])
+logger = get_logger()
 
 #: A mandatory requirement is not cleared on a model's say-so. Moving one to
 #: `complete` records who did it, because "satisfied" is a claim someone has to
@@ -115,18 +118,26 @@ async def export_matrix(
     user: CurrentUser,
     db: DbSession,
     include_removed: bool = Query(False, alias="includeRemoved"),
+    redact: bool = Query(False, description="Replace anything that looks like personal data."),
 ):
     """The matrix as a spreadsheet, with the citation on every row.
 
     A matrix that leaves the product without its citations becomes a list of
     assertions the moment it is opened somewhere else, so the document, page
     and quote travel with each requirement.
+
+    ``redact`` runs the personal-data patterns over every cell before the file
+    is written. It is off by default: a matrix is usually shared inside the
+    team, and redacting the contracting officer's email out of a citation
+    quote by default would make the quote wrong. Turn it on for the copy that
+    leaves the building.
     """
     query = select(Requirement).where(
         Requirement.analysis_id == analysis_id, Requirement.org_id == user.org_id
     )
     if not include_removed:
         query = query.where(Requirement.state != "removed")
+    permissions.require(user.role, "export")
     rows = (
         await db.execute(query.order_by(Requirement.document_id, Requirement.page, Requirement.reference))
     ).scalars().all()
@@ -134,15 +145,44 @@ async def export_matrix(
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow([name for name, _ in _EXPORT_COLUMNS])
+    removed = 0
     for row in rows:
-        writer.writerow([extract(row) for _, extract in _EXPORT_COLUMNS])
+        cells = [extract(row) for _, extract in _EXPORT_COLUMNS]
+        if redact:
+            cells, count = _redact_cells(cells)
+            removed += count
+        writer.writerow(cells)
     buffer.seek(0)
+    if redact:
+        logger.info("matrix_export_redacted", analysis_id=analysis_id, spans=removed)
 
     return StreamingResponse(
         iter([buffer.getvalue()]),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="compliance-matrix-{analysis_id}.csv"'},
     )
+
+
+def _redact_cells(cells: list) -> tuple[list, int]:
+    """Replace personal data cell by cell, and say how much went.
+
+    Cell by cell rather than over the assembled file: a span that straddles a
+    comma boundary would otherwise be replaced with a marker that breaks the
+    row, and a redacted spreadsheet that will not open is worse than one that
+    was never redacted.
+    """
+    out: list = []
+    removed = 0
+    for cell in cells:
+        text = "" if cell is None else str(cell)
+        found = redaction.scan(text)
+        if not found.findings:
+            out.append(cell)
+            continue
+        replaced, record = redaction.redact(text, found.findings)
+        removed += len(record)
+        out.append(replaced)
+    return out, removed
 
 
 @router.post("/analyses/{analysis_id}/matrix", status_code=status.HTTP_201_CREATED)
@@ -205,9 +245,15 @@ async def create_matrix_row(analysis_id: str, body: MatrixRowCreate, user: Curre
 
 @router.patch("/analyses/{analysis_id}/matrix/{row_id}")
 async def update_matrix_row(analysis_id: str, row_id: str, body: MatrixRowUpdate, user: CurrentUser, db: DbSession):
+    permissions.require(user.role, "edit_matrix")
     row = await _row(db, analysis_id, row_id, user.org_id)
 
     update = body.model_dump(exclude_unset=True, by_alias=False)
+    # Working a row and clearing a mandatory one are different authorities.
+    # A writer can draft against a disqualifying requirement all week; saying
+    # it is answered is somebody else's call.
+    if update.get("status") == _CLEARED and row.stakes == "disqualifying":
+        permissions.require(user.role, "clear_requirement")
     now = datetime.now(UTC)
     previous_status = row.status
     events: list[str] = []

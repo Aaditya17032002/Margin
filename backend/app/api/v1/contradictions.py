@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 
+from app.core import permissions
 from app.core.deps import CurrentUser, DbSession
 from app.core.logging import get_logger
 from app.db.models.analysis import Analysis
@@ -117,6 +118,7 @@ async def resolve(
     contradictory and a question is the only way out — a different outcome
     from picking a side, and the one most likely to move a deadline.
     """
+    permissions.require(user.role, "resolve_contradiction")
     await _analysis(db, analysis_id, user.org_id)
     row = (
         await db.execute(

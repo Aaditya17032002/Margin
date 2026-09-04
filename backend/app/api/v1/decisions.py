@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
+from app.core import permissions
 from app.core.deps import CurrentUser, DbSession
 from app.core.logging import get_logger
 from app.db.models.analysis import Analysis
@@ -143,6 +144,7 @@ async def record_decision(
     anything else and the only one that matters in a debrief — and a decision
     record without it is a status field with extra steps.
     """
+    permissions.require(user.role, "record_decision")
     analysis = await _analysis(db, analysis_id, user.org_id)
     if not body.rationale.strip():
         raise HTTPException(

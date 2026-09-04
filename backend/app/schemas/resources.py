@@ -629,3 +629,38 @@ class SearchResult(CamelModel):
     title: str
     snippet: str
     score: float
+
+
+# ── Governance ───────────────────────────────────────────────────────────
+
+class RetentionUpdate(CamelModel):
+    """How long each class of material is kept.
+
+    Every field is optional so a settings form can send one change. The
+    minimum hold is validated server-side rather than clamped here: an admin
+    who asks for thirty days should be told why they cannot have it, not
+    silently given four hundred.
+    """
+
+    enabled: bool | None = None
+    source_documents_days: int | None = Field(None, alias="sourceDocumentsDays", ge=0, le=36500)
+    extracted_text_days: int | None = Field(None, alias="extractedTextDays", ge=0, le=36500)
+    response_drafts_days: int | None = Field(None, alias="responseDraftsDays", ge=0, le=36500)
+    minimum_hold_days: int | None = Field(None, alias="minimumHoldDays", ge=0, le=36500)
+
+
+class RetentionApply(CamelModel):
+    """Actually dispose. Named rather than implied.
+
+    ``confirm`` carries the number of items the caller saw in the preview. If
+    the world moved between the preview and the call, the disposal is refused
+    rather than run against a set the caller never looked at.
+    """
+
+    confirm: int = Field(..., ge=0)
+    note: str = ""
+
+
+class LegalHoldRequest(CamelModel):
+    hold: bool
+    reason: str = ""

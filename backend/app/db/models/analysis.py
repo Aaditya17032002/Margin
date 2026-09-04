@@ -8,7 +8,9 @@ result into these JSONB arrays before exposing via the API.
 
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, Float, ForeignKey, Integer, String, Text
+from datetime import datetime
+
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -48,6 +50,16 @@ class Analysis(UUIDMixin, SoftDeleteMixin, Base):
         default="undecided",
     )
     decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ── Legal hold ───────────────────────────────────────────────────────
+    #: Exempts this pursuit from every retention timer until it comes off.
+    #: A fact about the pursuit rather than a setting on the policy: it has
+    #: to survive the policy being edited, and it has to say who put it
+    #: there and why.
+    legal_hold: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    legal_hold_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    legal_hold_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    legal_hold_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     spec_version: Mapped[str] = mapped_column(String(20), nullable=False, default="1.0")
 
     # ── Ownership ────────────────────────────────────────────────────────
