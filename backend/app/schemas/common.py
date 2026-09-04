@@ -349,6 +349,40 @@ class LedgerDelta(CamelModel):
     invalidated: list[str] = []
 
 
+class ResponseSummary(CamelModel):
+    """Counts from the last check of the bound response.
+
+    `cleared` is deliberately smaller than the satisfied count: a mandatory
+    requirement a rule or a model called satisfied is a recommendation until a
+    person signs it, and conflating the two is how a response ships with a gap.
+    """
+
+    total: int = 0
+    counts: dict[str, int] = {}
+    cleared: int = 0
+    awaiting_confirmation: int = 0
+    blocking: int = 0
+    blocking_references: list[str] = []
+
+
+class ResponseBinding(CamelModel):
+    """The draft response bound to this solicitation.
+
+    A response is a separately versioned corpus compared *against* the
+    solicitation, never mixed into it. Each draft is its own version so an
+    earlier check stays answerable.
+    """
+
+    document_id: str = ""
+    file_name: str = ""
+    label: str = ""
+    version: int = 0
+    bound_at: str | None = None
+    #: When it was last checked. Null between binding and the first check.
+    at: str | None = None
+    summary: ResponseSummary = ResponseSummary()
+
+
 class FileNode(CamelModel):
     id: str
     name: str

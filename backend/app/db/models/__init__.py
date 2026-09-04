@@ -8,6 +8,7 @@ from app.db.models.doc_chunk import DocChunk
 from app.db.models.finding import Finding
 from app.db.models.citation import Citation
 from app.db.models.requirement import Requirement
+from app.db.models.response_check import ResponseCheck
 from app.db.models.question import Question
 from app.db.models.notification import Notification
 from app.db.models.team_member import TeamMember
@@ -28,6 +29,7 @@ __all__ = [
     "Finding",
     "Citation",
     "Requirement",
+    "ResponseCheck",
     "Question",
     "Notification",
     "TeamMember",

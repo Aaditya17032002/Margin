@@ -346,6 +346,8 @@ export interface Analysis {
   coverage?: Coverage;
   /** What the last run added to, changed in, or stopped finding in the ledger. */
   ledger?: LedgerDelta;
+  /** The draft response bound to this solicitation, if one has been. */
+  response?: ResponseBinding;
   /** Only a deep-research pass fills this in; other modes leave it empty. */
   research?: ExternalResearch;
 }
@@ -388,6 +390,80 @@ export interface MatrixRow {
   confirmedBy?: string | null;
   confirmedAt?: string | null;
   history?: { at: string; event: string; detail: string }[];
+}
+
+/** How a response check came out. */
+export type CheckStatus = "satisfied" | "partial" | "failed" | "not_found" | "unverifiable";
+
+/** What kind of thing made the claim. */
+export type DecidedBy = "rule" | "model" | "human";
+
+/**
+ * One row of the trace: a solicitation clause, and what the response does
+ * about it.
+ *
+ * `decidedBy` is the field that keeps the row honest. A page count that was
+ * counted and a model's reading of a narrative section are not the same kind
+ * of claim, and a view that shows them identically invites a reader to trust
+ * them equally.
+ */
+export interface ResponseCheck {
+  id: string;
+  analysisId: string;
+  requirementId: string;
+  responseVersion: number;
+
+  /* The solicitation half. */
+  reference: string;
+  requirement: string;
+  stakes: Stakes;
+  citation: Citation;
+
+  /* The response half. */
+  status: CheckStatus;
+  verification: Verification;
+  decidedBy: DecidedBy;
+  /** Which mechanical rule fired, when one did. */
+  rule: string;
+  detail: string;
+  /** What is missing, in a sentence. Empty when nothing is. */
+  gap: string;
+  risk: "low" | "medium" | "high";
+  owner: string | null;
+  /** Where in the response it was answered. `located: false` means the quote could not be found. */
+  evidence: {
+    documentId?: string;
+    documentName?: string;
+    page?: number;
+    section?: string;
+    quote?: string;
+    located?: boolean;
+  };
+  /** A mandatory requirement is never cleared without a person's name on it. */
+  needsConfirmation: boolean;
+  confirmedBy?: string | null;
+  confirmedAt?: string | null;
+  note?: string | null;
+  history?: { at: string; event: string; detail: string }[];
+}
+
+/** The draft response bound to a solicitation, and the last check of it. */
+export interface ResponseBinding {
+  documentId?: string;
+  fileName?: string;
+  label?: string;
+  version?: number;
+  boundAt?: string;
+  at?: string | null;
+  summary?: {
+    total: number;
+    counts: Partial<Record<CheckStatus, number>>;
+    /** Satisfied *and* signed off. Deliberately smaller than the satisfied count. */
+    cleared: number;
+    awaitingConfirmation: number;
+    blocking: number;
+    blockingReferences: string[];
+  };
 }
 
 export interface QAQuestion {

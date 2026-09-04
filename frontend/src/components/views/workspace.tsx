@@ -29,6 +29,7 @@ import { DocTypeBadge, STAGE_LABEL, STAGE_ORDER } from "@/components/domain/prim
 import { DeadlineLine } from "@/components/domain/deadline";
 import { WORKSPACE_TABS, type WorkspaceTabId } from "@/components/workspace/tabs";
 import { CoveragePanel } from "@/components/workspace/coverage";
+import { ResponseGapPanel } from "@/components/workspace/response-gap";
 import {
   AmendmentsPanel,
   ComplianceMatrix,
@@ -134,6 +135,11 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
       ? { value: health.hardGatesFailed, tone: "seal" }
       : undefined,
     coverage: coverageGaps ? { value: coverageGaps, tone: "ochre" } : undefined,
+    // Mandatory requirements the draft does not answer. Nothing else on
+    // the rail outranks it once a response is bound.
+    response: analysis.response?.summary?.blocking
+      ? { value: analysis.response.summary.blocking, tone: "seal" }
+      : undefined,
     matrix: unassignedRows ? { value: unassignedRows, tone: "ochre" } : undefined,
     risks: health.criticalRisks ? { value: health.criticalRisks, tone: "seal" } : undefined,
     questions: unsentQuestions ? { value: unsentQuestions, tone: "ochre" } : undefined,
@@ -351,6 +357,7 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
                 {tab === "go-no-go" ? <GoNoGoPanel analysis={analysis} /> : null}
                 {tab === "overview" ? <OverviewPanel analysis={analysis} /> : null}
                 {tab === "coverage" ? <CoveragePanel analysis={analysis} /> : null}
+                {tab === "response" ? <ResponseGapPanel analysis={analysis} /> : null}
                 {tab === "scope" ? (
                   <FindingsPanel
                     analysis={analysis}

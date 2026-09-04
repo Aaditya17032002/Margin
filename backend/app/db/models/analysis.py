@@ -105,3 +105,8 @@ class Analysis(UUIDMixin, SoftDeleteMixin, Base):
     #: between runs is a finding, so the count is kept where a reviewer sees it.
     #: Shape: {added, updated, unchanged, removed, removedWithWork: [...]}.
     ledger: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    #: The draft response bound to this solicitation, and the last check of it.
+    #: Shape: {documentId, fileName, version, at, summary}. A response is a
+    #: separately versioned corpus, never mixed into what the solicitation
+    #: demands — so it lives beside the analysis rather than inside it.
+    response: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)

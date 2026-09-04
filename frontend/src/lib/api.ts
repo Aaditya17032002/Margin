@@ -25,6 +25,7 @@ import type {
   PastBid,
   Prefs,
   QAQuestion,
+  ResponseCheck,
   Role,
   SessionUser,
   Template,
@@ -251,6 +252,49 @@ export const matrixApi = {
     api<{ updated: number }>(`/api/v1/analyses/${analysisId}/matrix/bulk`, {
       method: "POST",
       body: { ids, ...patch },
+    }),
+};
+
+/* ------------------------------------------------------------------ */
+/* Response traceability                                                */
+/* ------------------------------------------------------------------ */
+
+export const responseApi = {
+  /**
+   * Bind a draft response to this solicitation and check it.
+   *
+   * Refused with 409 until the solicitation has been read: without a
+   * Requirement Ledger there is nothing to trace against, and a gap report
+   * built on no requirements would show a clean sheet.
+   */
+  bind: (analysisId: string, file: File, label = "") => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("label", label);
+    return api<{ document: { id: string; fileName: string }; version: number; jobId: string }>(
+      `/api/v1/analyses/${analysisId}/response`,
+      { method: "POST", body: form },
+    );
+  },
+
+  recheck: (analysisId: string) =>
+    api<{ jobId: string; status: string }>(`/api/v1/analyses/${analysisId}/response/recheck`, {
+      method: "POST",
+    }),
+
+  checks: (analysisId: string, version?: number) =>
+    api<ResponseCheck[]>(
+      `/api/v1/analyses/${analysisId}/response/checks${version ? `?version=${version}` : ""}`,
+    ),
+
+  decide: (
+    analysisId: string,
+    checkId: string,
+    patch: { status?: ResponseCheck["status"]; confirmed?: boolean; note?: string },
+  ) =>
+    api<ResponseCheck>(`/api/v1/analyses/${analysisId}/response/checks/${checkId}`, {
+      method: "PATCH",
+      body: patch,
     }),
 };
 

@@ -18,6 +18,7 @@ from app.schemas.common import (
     GoNoGo,
     KeyDate,
     LedgerDelta,
+    ResponseBinding,
     RiskItem,
     SilentItem,
     Stage,
@@ -111,6 +112,8 @@ class AnalysisResponse(CamelModel):
     coverage: Coverage = Coverage()
     #: What the last run changed in the Requirement Ledger.
     ledger: LedgerDelta = LedgerDelta()
+    #: The draft response bound to this solicitation, if one has been.
+    response: ResponseBinding = ResponseBinding()
     #: Only a deep-research pass fills this in; every other mode leaves it at
     #: its "not_requested" default.
     research: ExternalResearch = ExternalResearch()

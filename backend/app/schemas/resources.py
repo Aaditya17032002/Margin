@@ -84,6 +84,60 @@ class MatrixRowResponse(CamelModel):
     history: list[dict] = []
 
 
+# ── Response traceability ────────────────────────────────────────────────
+
+class ResponseCheckResponse(CamelModel):
+    """One row of the trace: a solicitation clause, and what the response does
+    about it.
+
+    The first block is the solicitation half — clause, page, stakes — and the
+    second is the response half. `decidedBy` says what kind of claim this is:
+    `rule` was counted, `model` was read, `human` was signed. Collapsing those
+    into one status is how a counted page limit and a model's opinion end up
+    looking equally certain.
+    """
+
+    id: str
+    analysis_id: str = Field(alias="analysisId")
+    requirement_id: str = Field(alias="requirementId")
+    response_version: int = Field(1, alias="responseVersion")
+
+    reference: str = ""
+    requirement: str = ""
+    stakes: str = "scored"
+    citation: dict = {}
+
+    status: str = "unverifiable"
+    verification: str = "substantive"
+    decided_by: str = Field("rule", alias="decidedBy")
+    #: Which mechanical rule fired, when one did.
+    rule: str = ""
+    detail: str = ""
+    #: What is missing, in a sentence. Empty when nothing is.
+    gap: str = ""
+    risk: str = "low"
+    owner: str | None = None
+    #: Where in the response it was answered. `located: false` means the quote
+    #: could not be found and the claim resting on it was downgraded.
+    evidence: dict = {}
+    #: A mandatory requirement a model called satisfied is a recommendation
+    #: until a person signs it.
+    needs_confirmation: bool = Field(False, alias="needsConfirmation")
+    confirmed_by: str | None = Field(None, alias="confirmedBy")
+    confirmed_at: str | None = Field(None, alias="confirmedAt")
+    note: str | None = None
+    history: list[dict] = []
+
+
+class ResponseCheckUpdate(CamelModel):
+    """A person's verdict. It outranks both the rule and the model."""
+
+    status: Literal["satisfied", "partial", "failed", "not_found", "unverifiable"] | None = None
+    #: Signing off a mandatory requirement. The engine cannot do this itself.
+    confirmed: bool | None = None
+    note: str | None = None
+
+
 class BulkMatrixRequest(CamelModel):
     ids: list[str]
     owner: str | None = None

@@ -73,6 +73,7 @@ def _to_response(a: Analysis, *, with_pages: bool = True) -> dict:
         "versions": a.versions or [],
         "coverage": a.coverage or {},
         "ledger": a.ledger or {},
+        "response": a.response or {},
         "research": a.research or {},
     }
 
