@@ -43,7 +43,9 @@ _DECIDER_WORDS = {
 }
 
 
-def build(*, analysis, requirements: list, checks: list, queue: list) -> list[Block]:
+def build(
+    *, analysis, requirements: list, checks: list, queue: list, questions: list | None = None
+) -> list[Block]:
     blocks: list[Block] = []
     blocks.append(("heading", 1, "Evidence pack"))
     blocks.append(
@@ -65,6 +67,7 @@ def build(*, analysis, requirements: list, checks: list, queue: list) -> list[Bl
     blocks += _coverage(analysis)
     blocks += _amendments(analysis)
     blocks += _requirements(requirements)
+    blocks += _questions(questions or [])
     blocks += _response(analysis, checks, requirements)
     blocks += _signoffs(checks, requirements)
     blocks += _open(queue)
@@ -187,6 +190,75 @@ def _requirements(requirements: list) -> list[Block]:
             rows,
         )
     )
+    return blocks
+
+
+def _questions(questions: list) -> list[Block]:
+    """What was asked, what came back, and what it changed.
+
+    An agency answer is a contract document. A pack that summarised one would
+    be worth nothing in the dispute it exists for, so answers are reproduced as
+    they were received — and the questions nobody answered are listed too,
+    because a decision made without an answer is a decision somebody has to be
+    able to account for.
+    """
+    if not questions:
+        return []
+
+    blocks: list[Block] = [("heading", 2, "Questions to the agency")]
+    answered = [q for q in questions if (q.status or "draft") == "answered"]
+    open_questions = [q for q in questions if (q.status or "draft") == "submitted"]
+    drafts = [q for q in questions if (q.status or "draft") == "draft"]
+
+    blocks.append(
+        (
+            "para",
+            f"{len(questions)} question(s): {len(answered)} answered, {len(open_questions)} sent "
+            f"and unanswered, {len(drafts)} never sent.",
+        )
+    )
+
+    if answered:
+        blocks.append(
+            (
+                "table",
+                ["Clause", "Question", "The agency's answer", "Source", "When"],
+                [
+                    [
+                        q.reference if hasattr(q, "reference") else "",
+                        (q.text or "")[:300],
+                        (q.answer or "")[:600],
+                        q.answer_source or "",
+                        q.answered_at.isoformat(timespec="minutes") if q.answered_at else "",
+                    ]
+                    for q in answered
+                ],
+            )
+        )
+
+    if open_questions or drafts:
+        blocks.append(
+            (
+                "note",
+                "Unanswered questions are recorded because a decision made without an answer is "
+                "a decision somebody has to be able to account for.",
+            )
+        )
+        blocks.append(
+            (
+                "table",
+                ["State", "Question", "Why it was asked", "Affects the decision"],
+                [
+                    [
+                        q.status or "draft",
+                        (q.text or "")[:300],
+                        (q.rationale or "")[:200],
+                        "yes" if q.go_no_go_impact else "",
+                    ]
+                    for q in [*open_questions, *drafts]
+                ],
+            )
+        )
     return blocks
 
 

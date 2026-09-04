@@ -26,6 +26,7 @@ act on does not belong in a queue.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 BLOCKING = "blocking"
 IMPORTANT = "important"
@@ -75,6 +76,7 @@ def build(
     analysis,
     requirements: list,
     checks: list,
+    questions: list | None = None,
 ) -> list[QueueItem]:
     """Collect every open question across the analysis."""
     items: list[QueueItem] = []
@@ -84,6 +86,7 @@ def build(
     items += _citations(analysis)
     items += _requirements(requirements)
     items += _checks(checks, {r.id: r for r in requirements})
+    items += _questions(questions or [], analysis)
 
     items.sort(key=lambda item: (_ORDER.get(item.severity, 3), item.reference or item.title))
     return items
@@ -302,6 +305,11 @@ def _checks(checks: list, by_id: dict) -> list[QueueItem]:
         if check.confirmed_by:
             continue
         requirement = by_id.get(check.requirement_id)
+        if requirement is not None and requirement.state != "open":
+            # The clause was withdrawn or superseded. Whatever the check said
+            # about it is history, and putting it in a worklist sends somebody
+            # to answer a requirement that no longer exists.
+            continue
         reference = requirement.reference if requirement else check.requirement_id
 
         if check.needs_confirmation:
@@ -322,6 +330,30 @@ def _checks(checks: list, by_id: dict) -> list[QueueItem]:
                     reference=reference,
                     owner=check.owner,
                     detail=check.detail[:200],
+                )
+            )
+            continue
+
+        # A verdict that was settled and has been undone is described as that,
+        # whatever its risk. Filing it as "the response does not answer this"
+        # would be wrong — somebody answered it, and something since then made
+        # the answer unreliable.
+        if any(e.get("event") == "reopened" for e in (check.history or [])):
+            items.append(
+                QueueItem(
+                    id=f"check:reopened:{check.id}",
+                    kind="response",
+                    severity=BLOCKING if check.risk == "high" else IMPORTANT,
+                    title=f"An answer was written and then reopened — {reference}",
+                    why=check.detail[:200] or "Something changed after this was checked.",
+                    consequence=(
+                        "The section still exists, but nobody has confirmed it answers the "
+                        "requirement as it now stands."
+                    ),
+                    tab="response",
+                    reference=reference,
+                    owner=check.owner,
+                    detail=check.gap[:200],
                 )
             )
             continue
@@ -348,8 +380,10 @@ def _checks(checks: list, by_id: dict) -> list[QueueItem]:
                     kind="response",
                     severity=ROUTINE,
                     title=f"Could not be checked automatically — {reference}",
-                    why=check.detail[:160] or "The check could not reach a conclusion.",
-                    consequence="It stays unresolved until a person looks, and unresolved is not compliant.",
+                    why=check.detail[:200] or "The check could not reach a conclusion.",
+                    consequence=(
+                        "It stays unresolved until a person looks, and unresolved is not compliant."
+                    ),
                     tab="response",
                     reference=reference,
                     owner=check.owner,
@@ -357,3 +391,113 @@ def _checks(checks: list, by_id: dict) -> list[QueueItem]:
                 )
             )
     return items
+
+
+def _questions(questions: list, analysis) -> list[QueueItem]:
+    """Questions the agency has not answered, and the deadline that closes them.
+
+    A question is not finished when it is sent. One that materially affects the
+    bid and was never answered is a decision made on an assumption — and once
+    the cut-off passes, it is an assumption that can no longer be resolved by
+    asking.
+    """
+    if not questions:
+        return []
+
+    items: list[QueueItem] = []
+    cutoff = _questions_due(analysis)
+    past_cutoff = bool(cutoff and cutoff < datetime.now(UTC))
+
+    drafts = [q for q in questions if (getattr(q, "status", None) or "draft") == "draft"]
+    unanswered = [q for q in questions if (getattr(q, "status", None) or "draft") == "submitted"]
+
+    if drafts and past_cutoff:
+        items.append(
+            QueueItem(
+                id="question:missed_cutoff",
+                kind="question",
+                severity=BLOCKING if any(q.go_no_go_impact for q in drafts) else IMPORTANT,
+                title=f"{len(drafts)} question(s) were never sent, and the deadline has passed",
+                why="The window for asking the agency closed while these were still drafts.",
+                consequence=(
+                    "Whatever they were going to resolve now has to be decided on an "
+                    "assumption, and the assumption cannot be checked."
+                ),
+                tab="questions",
+            )
+        )
+    elif drafts and cutoff:
+        items.append(
+            QueueItem(
+                id="question:unsent",
+                kind="question",
+                severity=IMPORTANT if any(q.go_no_go_impact for q in drafts) else ROUTINE,
+                title=f"{len(drafts)} question(s) drafted and not sent",
+                why=f"Questions are due {cutoff.date().isoformat()}.",
+                consequence="After that date the agency does not have to answer them.",
+                tab="questions",
+            )
+        )
+
+    for question in unanswered:
+        if not question.go_no_go_impact:
+            continue
+        items.append(
+            QueueItem(
+                id=f"question:unanswered:{question.id}",
+                kind="question",
+                severity=BLOCKING if past_cutoff else IMPORTANT,
+                title=f"A question that affects the bid decision has no answer — {question.text[:90]}",
+                why=(
+                    "It was sent and the agency has not answered."
+                    + (" The question period has closed." if past_cutoff else "")
+                ),
+                consequence=(
+                    "The decision this was meant to inform will be made without it."
+                    if past_cutoff
+                    else "Chase it, or plan for the answer not arriving."
+                ),
+                tab="questions",
+                detail=(question.rationale or "")[:200],
+            )
+        )
+
+    # An amendment usually carries the answers, and nothing here can tell which
+    # paragraph answers which question.
+    if unanswered and (analysis.amendments or []):
+        latest = (analysis.amendments or [])[-1]
+        items.append(
+            QueueItem(
+                id="question:check_amendment",
+                kind="question",
+                severity=ROUTINE,
+                title=(
+                    f"{len(unanswered)} question(s) are still open and "
+                    f"{latest.get('label', 'an amendment')} has landed"
+                ),
+                why=(
+                    "Agencies usually publish Q&A answers with an amendment, and Margin cannot "
+                    "tell which paragraph answers which question."
+                ),
+                consequence=(
+                    "An answer that arrived and was never recorded changes nothing: work done "
+                    "against the old reading stays marked as done."
+                ),
+                tab="questions",
+            )
+        )
+    return items
+
+
+def _questions_due(analysis) -> datetime | None:
+    """The date the agency stops accepting questions."""
+    for date in analysis.dates or []:
+        if str(date.get("kind")) != "questions-due":
+            continue
+        raw = str(date.get("at") or "")
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return None

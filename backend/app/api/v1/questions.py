@@ -16,6 +16,7 @@ from sqlalchemy import select, func
 from datetime import UTC, datetime
 
 from app.core.deps import CurrentUser, DbSession
+from app.pipeline.requirements import classify_type, classify_verification, stable_key
 from app.core.logging import get_logger
 from app.db.models.question import Question
 from app.db.models.requirement import Requirement
@@ -146,16 +147,38 @@ async def update_question(analysis_id: str, question_id: str, body: QuestionUpda
 async def record_answer(
     analysis_id: str, question_id: str, body: QuestionAnswer, user: CurrentUser, db: DbSession
 ):
-    """Record the agency's answer, and reopen what it invalidates.
+    """Record the agency's answer, and act on what it changed.
 
-    An answer that only lands in a list has changed nothing. When the question
-    names a requirement, the answer is written into that requirement's history
-    and any response check that was *satisfied* against the old reading is
-    reopened — the same rule an amendment gets, for the same reason: an answer
-    written before the clarification is not an answer to the clarified clause.
+    An answer that only lands in a list has changed nothing. Three things can
+    have happened, and they call for completely different work:
+
+    `clarified`
+        The requirement stands and now has context. Work already done against
+        it is reopened — a section written before the clarification is not an
+        answer to the clarified clause.
+
+    `amended`
+        The requirement is different now. The old one is superseded and a new
+        one takes its place, carrying the owner and the response location but
+        not the claim that it is finished. This is the same treatment an
+        amendment gets, because it is the same event arriving by another route.
+
+    `withdrawn`
+        It no longer applies. The requirement is marked removed rather than
+        deleted, so "what happened to L.5?" stays answerable.
     """
     q = await _question(db, analysis_id, question_id, user.org_id)
     now = datetime.now(UTC)
+
+    if body.effect == "amended" and not (body.revised_requirement or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "An amended requirement needs its new wording. Recording that a clause "
+                "changed without saying how leaves the ledger knowing less than the person "
+                "who filed it."
+            ),
+        )
 
     q.answer = body.answer
     q.answer_source = body.source[:255]
@@ -166,10 +189,18 @@ async def record_answer(
         q.submitted_at = now
     q.history = [
         *(q.history or []),
-        _event(now, "answered", f"{body.source or 'The agency'} answered: {body.answer[:300]}"),
+        _event(
+            now,
+            "answered",
+            f"{body.source or 'The agency'} answered ({body.effect}): {body.answer[:300]}",
+        ),
     ]
 
     reopened: list[str] = []
+    superseded: str | None = None
+    withdrawn: str | None = None
+
+    requirement = None
     if q.requirement_id:
         requirement = (
             await db.execute(
@@ -178,43 +209,173 @@ async def record_answer(
                 )
             )
         ).scalar_one_or_none()
-        if requirement is not None:
-            requirement.history = [
-                *(requirement.history or []),
-                _event(
-                    now,
-                    "clarified",
-                    f"Answered by the agency ({body.source or 'Q&A'}): {body.answer[:300]}",
+
+    if requirement is not None:
+        requirement.history = [
+            *(requirement.history or []),
+            _event(
+                now,
+                body.effect,
+                f"Answered by the agency ({body.source or 'Q&A'}): {body.answer[:300]}",
+            ),
+        ]
+
+        if body.effect == "withdrawn":
+            requirement.state = "removed"
+            withdrawn = requirement.reference
+            reopened += await _reopen(
+                db, requirement, now, body,
+                detail=(
+                    "The agency withdrew this requirement after the response was checked. "
+                    "Anything written for it can stop, once somebody confirms that reading."
                 ),
-            ]
-            checks = (
-                await db.execute(
-                    select(ResponseCheck).where(ResponseCheck.requirement_id == requirement.id)
-                )
-            ).scalars().all()
-            for check in checks:
-                if check.status != "satisfied":
-                    continue
-                check.status = "unverifiable"
-                check.decided_by = "rule"
-                check.needs_confirmation = False
-                check.confirmed_by = None
-                check.confirmed_at = None
-                check.detail = (
+            )
+        elif body.effect == "amended":
+            replacement = await _supersede(db, requirement, body.revised_requirement or "", now, body)
+            superseded = requirement.reference
+            reopened += await _reopen(
+                db, requirement, now, body,
+                detail=(
+                    "The agency amended this requirement after the response was checked. "
+                    "The answer was written against wording that no longer stands."
+                ),
+                replacement=replacement,
+            )
+        else:
+            reopened += await _reopen(
+                db, requirement, now, body,
+                detail=(
                     "The agency answered a question about this requirement after this was "
                     "checked. The answer may change what compliance means here."
-                )
-                check.gap = "Re-read the answer against what the response says."
-                check.risk = "high" if requirement.stakes == "disqualifying" else "medium"
-                check.history = [
-                    *(check.history or []),
-                    _event(now, "reopened", f"Reopened by an agency answer ({body.source or 'Q&A'})."),
-                ]
-                reopened.append(requirement.reference)
+                ),
+            )
 
     await db.flush()
-    logger.info("question_answered", analysis_id=analysis_id, question=question_id, reopened=len(reopened))
-    return {**_to_response(q), "reopened": reopened}
+    logger.info(
+        "question_answered",
+        analysis_id=analysis_id,
+        question=question_id,
+        effect=body.effect,
+        reopened=len(reopened),
+    )
+    return {
+        **_to_response(q),
+        "reopened": reopened,
+        "superseded": superseded,
+        "withdrawn": withdrawn,
+    }
+
+
+async def _reopen(
+    db: DbSession,
+    requirement: Requirement,
+    now: datetime,
+    body: QuestionAnswer,
+    *,
+    detail: str,
+    replacement: Requirement | None = None,
+) -> list[str]:
+    """Undo the settled verdicts on a requirement an answer has moved.
+
+    Only verdicts that said the requirement *was* answered. Reopening something
+    that was already a gap is noise, and noise in a change log is how people
+    stop reading it.
+    """
+    checks = (
+        await db.execute(select(ResponseCheck).where(ResponseCheck.requirement_id == requirement.id))
+    ).scalars().all()
+
+    reopened: list[str] = []
+    for check in checks:
+        if check.status != "satisfied":
+            continue
+        check.status = "unverifiable"
+        check.decided_by = "rule"
+        check.needs_confirmation = False
+        check.confirmed_by = None
+        check.confirmed_at = None
+        check.detail = detail
+        check.gap = "Re-read the answer against what the response says."
+        check.risk = "high" if requirement.stakes == "disqualifying" else "medium"
+        if replacement is not None:
+            # The verdict belongs to the requirement that now stands, so the
+            # work follows the clause rather than being stranded on a
+            # superseded row nobody looks at.
+            check.requirement_id = replacement.id
+        check.history = [
+            *(check.history or []),
+            _event(
+                now,
+                "reopened",
+                f"Reopened by an agency answer ({body.source or 'Q&A'}, {body.effect}).",
+            ),
+        ]
+        reopened.append(requirement.reference)
+    return reopened
+
+
+async def _supersede(
+    db: DbSession,
+    requirement: Requirement,
+    revised: str,
+    now: datetime,
+    body: QuestionAnswer,
+) -> Requirement:
+    """Replace a requirement an answer rewrote, keeping the lineage.
+
+    The same shape an amendment produces: the old row is `superseded` rather
+    than edited, the two are linked, and the work moves across without the
+    claim that it is finished. A run that later reads the amended wording from
+    the document itself will find this row by its key rather than adding a
+    second copy.
+    """
+    replacement = Requirement(
+        id=f"req_{uuid.uuid4().hex[:12]}",
+        analysis_id=requirement.analysis_id,
+        org_id=requirement.org_id,
+        key=stable_key(revised, requirement.reference),
+        reference=requirement.reference,
+        text=revised.strip(),
+        kind=requirement.kind,
+        type=classify_type(revised),
+        stakes=requirement.stakes,
+        verification=classify_verification(requirement.kind, revised),
+        citation=requirement.citation,
+        document_id=requirement.document_id,
+        page=requirement.page,
+        sources=sorted({*(requirement.sources or []), "manual"}),
+        state="open",
+        supersedes_id=requirement.id,
+        introduced_by=requirement.introduced_by,
+        first_seen_at=now,
+        last_seen_at=now,
+        last_seen_run="qa-answer",
+        owner=requirement.owner,
+        response_location=requirement.response_location,
+        # Never inherited as done: the answer was written against wording that
+        # no longer stands.
+        status="assigned" if requirement.owner else "unassigned",
+        note=requirement.note,
+        due_at=requirement.due_at,
+        history=[
+            _event(
+                now,
+                "supersedes",
+                f"Replaces {requirement.reference} after the agency amended it "
+                f"({body.source or 'Q&A'}).",
+            )
+        ],
+    )
+    db.add(replacement)
+    await db.flush()
+
+    requirement.state = "superseded"
+    requirement.superseded_by_id = replacement.id
+    requirement.history = [
+        *(requirement.history or []),
+        _event(now, "superseded", f"Amended by an agency answer ({body.source or 'Q&A'})."),
+    ]
+    return replacement
 
 
 async def _question(db, analysis_id: str, question_id: str, org_id: str) -> Question:

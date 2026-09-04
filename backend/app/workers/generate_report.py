@@ -148,8 +148,23 @@ async def _evidence_blocks(db, analysis: Analysis, rows: list[Requirement]) -> l
             .scalars()
             .all()
         )
-    queue = verification.build(analysis=analysis, requirements=list(rows), checks=checks)
-    return evidence.build(analysis=analysis, requirements=list(rows), checks=checks, queue=queue)
+    from app.db.models.question import Question
+
+    questions = list(
+        (await db.execute(select(Question).where(Question.analysis_id == analysis.id)))
+        .scalars()
+        .all()
+    )
+    queue = verification.build(
+        analysis=analysis, requirements=list(rows), checks=checks, questions=questions
+    )
+    return evidence.build(
+        analysis=analysis,
+        requirements=list(rows),
+        checks=checks,
+        queue=queue,
+        questions=questions,
+    )
 
 
 async def _fail(db, report: Report, reason: str) -> dict:

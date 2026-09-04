@@ -25,7 +25,7 @@ import { Check, GripVertical, MessageSquareReply, Plus, Send, Trash2 } from "luc
 import { cn, pluralize } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/controls";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Switch } from "@/components/ui/controls";
 import { Input, Textarea, Field } from "@/components/ui/input";
 import { Callout, EmptyState } from "@/components/ui/feedback";
 import { Dialog, DialogContent, Tooltip } from "@/components/ui/overlay";
@@ -259,6 +259,8 @@ function AgencyAnswer({ question }: { question: QAQuestion }) {
   const [open, setOpen] = React.useState(false);
   const [answer, setAnswer] = React.useState("");
   const [source, setSource] = React.useState("");
+  const [effect, setEffect] = React.useState<"clarified" | "amended" | "withdrawn">("clarified");
+  const [revised, setRevised] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
   if (question.answer) {
@@ -298,19 +300,55 @@ function AgencyAnswer({ question }: { question: QAQuestion }) {
         placeholder="Where it came from — Amendment 0002, Q&A set 1, an email date"
         aria-label="Where the answer came from"
       />
+
+      {/* The field that makes this more than a notes box. An answer that
+          explains a clause and one that rewrites it call for completely
+          different work, and only the person reading it can say which. */}
+      <Select value={effect} onValueChange={(value) => setEffect(value as typeof effect)}>
+        <SelectTrigger>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="clarified">It explains the requirement — the wording stands</SelectItem>
+          <SelectItem value="amended">It changes the requirement</SelectItem>
+          <SelectItem value="withdrawn">The requirement no longer applies</SelectItem>
+        </SelectContent>
+      </Select>
+
+      {effect === "amended" ? (
+        <Textarea
+          value={revised}
+          onChange={(event) => setRevised(event.target.value)}
+          placeholder="The requirement as it now reads."
+          rows={2}
+          aria-label="The requirement as it now reads"
+        />
+      ) : null}
+
       <div className="flex items-center gap-2">
         <Button
           size="sm"
-          disabled={saving || !answer.trim()}
+          disabled={saving || !answer.trim() || (effect === "amended" && !revised.trim())}
           onClick={async () => {
             setSaving(true);
-            const reopened = await recordAnswer(question.id, answer.trim(), source.trim());
+            const result = await recordAnswer(question.id, {
+              answer: answer.trim(),
+              source: source.trim(),
+              effect,
+              revisedRequirement: revised.trim() || undefined,
+            });
             setSaving(false);
             setOpen(false);
+            const parts: string[] = [];
+            if (result.superseded) parts.push(`${result.superseded} was replaced.`);
+            if (result.withdrawn) parts.push(`${result.withdrawn} no longer applies.`);
+            if (result.reopened.length) {
+              parts.push(
+                `${pluralize(result.reopened.length, "answer")} written against the old reading reopened: ${result.reopened.join(", ")}.`,
+              );
+            }
             notify.success("Answer recorded.", {
-              description: reopened.length
-                ? `${pluralize(reopened.length, "answer")} written against the old reading reopened: ${reopened.join(", ")}.`
-                : "Nothing in the response had been answered against this yet.",
+              description: parts.join(" ") || "Nothing in the response had been answered against this yet.",
             });
           }}
         >

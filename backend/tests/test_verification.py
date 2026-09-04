@@ -27,6 +27,7 @@ def _analysis(**overrides):
         amendments=[],
         response={},
         gates=[],
+        dates=[],
         identity=[], scope=[], legal=[], eligibility=[], pricing=[], post_award=[],
     )
     base.update(overrides)

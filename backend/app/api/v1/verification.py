@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from app.core.deps import CurrentUser, DbSession
 from app.db.models.analysis import Analysis
+from app.db.models.question import Question
 from app.db.models.requirement import Requirement
 from app.db.models.response_check import ResponseCheck
 from app.db.models.verdict import Verdict
@@ -51,7 +52,16 @@ async def verification_queue(analysis_id: str, user: CurrentUser, db: DbSession)
             )
         ).scalars().all()
 
-    items = verification.build(analysis=analysis, requirements=list(requirements), checks=list(checks))
+    questions = (
+        await db.execute(select(Question).where(Question.analysis_id == analysis_id))
+    ).scalars().all()
+
+    items = verification.build(
+        analysis=analysis,
+        requirements=list(requirements),
+        checks=list(checks),
+        questions=list(questions),
+    )
     return {"summary": verification.summarise(items), "items": [item.as_dict() for item in items]}
 
 

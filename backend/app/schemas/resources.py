@@ -170,15 +170,28 @@ class QuestionUpdate(CamelModel):
 
 
 class QuestionAnswer(CamelModel):
-    """What the agency said back.
+    """What the agency said back, and what it did to the requirement.
 
-    Stored verbatim. A Q&A answer is a contract document and the wording is
-    the whole of it — a paraphrase of one is worth nothing in a dispute.
+    The answer is stored verbatim — a Q&A answer is a contract document and the
+    wording is the whole of it; a paraphrase is worth nothing in a dispute.
+
+    `effect` is the part that makes this more than a notes field. An answer
+    that merely explains a clause and an answer that rewrites it call for
+    completely different work, and only the person reading it can say which
+    this is.
     """
 
     answer: str
     #: Where it came from: "Amendment 0002", "Q&A set 1", an email date.
     source: str = ""
+    #: `clarified` — the requirement stands and now has context.
+    #: `amended` — the requirement is different now; supply `revisedRequirement`.
+    #: `withdrawn` — it no longer applies.
+    effect: Literal["clarified", "amended", "withdrawn"] = "clarified"
+    #: The requirement as it now reads. Required when `effect` is `amended`:
+    #: recording that a clause changed without saying how leaves the ledger
+    #: knowing less than the person who filed it.
+    revised_requirement: str | None = Field(None, alias="revisedRequirement")
 
 
 class QuestionResponse(CamelModel):

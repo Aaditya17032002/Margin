@@ -408,10 +408,25 @@ export const questionsApi = {
    * Returns the requirements whose answers were reopened by it: a section
    * written before a clarification is not an answer to the clarified clause.
    */
-  answer: (analysisId: string, questionId: string, answer: string, source = "") =>
-    api<QAQuestion & { reopened: string[] }>(
+  answer: (
+    analysisId: string,
+    questionId: string,
+    body: {
+      answer: string;
+      source?: string;
+      /**
+       * What the answer did to the requirement. An answer that explains a
+       * clause and one that rewrites it call for completely different work,
+       * and only the person reading it can say which this is.
+       */
+      effect?: "clarified" | "amended" | "withdrawn";
+      /** Required when `effect` is `amended`. */
+      revisedRequirement?: string;
+    },
+  ) =>
+    api<QAQuestion & { reopened: string[]; superseded: string | null; withdrawn: string | null }>(
       `/api/v1/analyses/${analysisId}/questions/${questionId}/answer`,
-      { method: "POST", body: { answer, source } },
+      { method: "POST", body },
     ),
 };
 
