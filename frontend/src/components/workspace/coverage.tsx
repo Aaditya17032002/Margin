@@ -10,7 +10,7 @@ import { Panel, PanelHeader, Well } from "@/components/ui/surface";
 import { Callout, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/overlay";
-import type { Analysis, CoverageDocument, CoverageState } from "@/types";
+import type { Analysis, CoverageDocument, CoverageState, LedgerDelta } from "@/types";
 
 /**
  * The reading ledger.
@@ -74,6 +74,8 @@ export function CoveragePanel({ analysis }: { analysis: Analysis }) {
 
   return (
     <div className="space-y-5">
+      <LedgerChange delta={analysis.ledger} />
+
       {coverage.complete ? (
         <Callout tone="leaf" title="Every page of the package was read">
           All {totals.pages} {pluralize(totals.pages, "page")} across{" "}
@@ -173,6 +175,48 @@ export function CoveragePanel({ analysis }: { analysis: Analysis }) {
         </p>
       </Well>
     </div>
+  );
+}
+
+/**
+ * What the last run did to the Requirement Ledger.
+ *
+ * The number that earns its place here is `removedWithWork`: requirements
+ * somebody had already assigned or drafted against, that this read of the
+ * package no longer finds. Under the old behaviour those rows were deleted and
+ * the work went with them, silently. Now they are kept, and named.
+ */
+function LedgerChange({ delta }: { delta?: LedgerDelta }) {
+  if (!delta || (!delta.added && !delta.updated && !delta.removed && !delta.unchanged)) return null;
+
+  const total = delta.added + delta.updated + delta.unchanged;
+  const stranded = delta.removedWithWork ?? [];
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="What the last run changed"
+        description="Requirements keep their identity across reads, so ownership and status survive a re-run."
+      />
+      <div className="px-5 pb-5">
+        <p className="text-sm text-ink-soft tabular-nums">
+          {total} {pluralize(total, "requirement")} in the ledger — {delta.added} new,{" "}
+          {delta.updated} changed, {delta.unchanged} unchanged.
+          {delta.removed ? ` ${delta.removed} no longer found.` : ""}
+        </p>
+        {stranded.length ? (
+          <Callout tone="ochre" title="Assigned work whose requirement is gone" className="mt-4">
+            The latest read of the package no longer finds{" "}
+            {stranded.length === 1 ? "a requirement" : `${stranded.length} requirements`} that someone
+            was already working: {stranded.join(", ")}. Either an amendment removed{" "}
+            {stranded.length === 1 ? "it" : "them"} — in which case the work can stop — or the
+            extraction missed {stranded.length === 1 ? "it" : "them"} this time, in which case it
+            cannot. The {stranded.length === 1 ? "row is" : "rows are"} kept either way; nothing was
+            deleted.
+          </Callout>
+        ) : null}
+      </div>
+    </Panel>
   );
 }
 

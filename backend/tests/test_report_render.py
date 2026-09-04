@@ -88,7 +88,7 @@ def _render_to(tmp_path, analysis):
     report = SimpleNamespace(id="x_test", template_name="Go/no-go brief", format="DOCX")
     row = SimpleNamespace(
         reference="8.3",
-        requirement="Three prior engagements",
+        text="Three prior engagements",
         type="shall",
         owner=None,
         status="unassigned",

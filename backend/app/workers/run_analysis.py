@@ -18,14 +18,16 @@ from app.db.base import async_session_factory
 from app.db.models.activity import ActivityLog
 from app.db.models.analysis import Analysis
 from app.db.models.document import Document
-from app.db.models.matrix_row import MatrixRow
 from app.db.models.doc_chunk import DocChunk
 from app.db.models.notification import Notification
 from app.db.models.question import Question
 from app.db.models.user import User
+from app.pipeline.anchor import CitationAnchor
 from app.pipeline.corpus import Corpus, build_corpus
 from app.pipeline.coverage import CoverageLedger, summarise as coverage_summary
 from app.pipeline.ingest import embed_chunks
+from app.pipeline.ledger import reconcile
+from app.pipeline.requirements import from_findings, from_sweep, merge
 from app.pipeline.sweep import sweep_chunks
 from app.providers.base import ChunkResult
 from app.workers import derive
@@ -184,8 +186,26 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
                 },
             ]
 
+            # ── Step 4: the Requirement Ledger ──────────────────────────
+            # The compliance matrix is a projection of this, not a second list
+            # rebuilt from scratch each run. Requirements keep their identity —
+            # and therefore their owner, status and notes — across re-reads.
             if "compliance" in roster:
-                await _write_matrix_rows(db, analysis, derive.matrix_rows(analysis.legal))
+                anchor = CitationAnchor(analysis.pages)
+                drafts = merge(
+                    from_sweep(sweep_result.hits, anchor),
+                    from_findings(analysis.legal),
+                )
+                analysis.ledger = (
+                    await reconcile(
+                        db,
+                        analysis_id=analysis.id,
+                        org_id=analysis.org_id,
+                        drafts=drafts,
+                        run_id=version_id,
+                        introduced_by=corpus.documents[0].id if corpus.documents else "",
+                    )
+                ).as_dict()
             if "qa" in roster:
                 await _write_questions(db, analysis, derive.questions(orchestration.get("questions", [])))
 
@@ -243,35 +263,6 @@ async def _persist_chunks(
         )
     await db.flush()
     logger.info("chunks_persisted", analysis_id=analysis.id, chunks=len(corpus.chunks))
-
-
-async def _write_matrix_rows(db: AsyncSession, analysis: Analysis, rows: list[dict]) -> None:
-    """Replace the rows this pass owns. Rows a person added by hand are kept:
-    they carry an owner or a response location the agent never sets."""
-    existing = await db.execute(
-        select(MatrixRow).where(MatrixRow.analysis_id == analysis.id)
-    )
-    for row in existing.scalars().all():
-        if row.owner is None and not row.response_location and row.status == "unassigned":
-            await db.delete(row)
-
-    for row in rows:
-        db.add(
-            MatrixRow(
-                id=f"m_{uuid.uuid4().hex[:8]}",
-                analysis_id=analysis.id,
-                org_id=analysis.org_id,
-                reference=row["reference"][:255],
-                requirement=row["requirement"],
-                type=row["type"],
-                stakes=row["stakes"],
-                owner=None,
-                response_location="",
-                status="unassigned",
-                citation=row["citation"],
-                note=row["note"],
-            )
-        )
 
 
 async def _write_questions(db: AsyncSession, analysis: Analysis, questions: list[dict]) -> None:

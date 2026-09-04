@@ -7,7 +7,7 @@ from app.db.models.document import Document
 from app.db.models.doc_chunk import DocChunk
 from app.db.models.finding import Finding
 from app.db.models.citation import Citation
-from app.db.models.matrix_row import MatrixRow
+from app.db.models.requirement import Requirement
 from app.db.models.question import Question
 from app.db.models.notification import Notification
 from app.db.models.team_member import TeamMember
@@ -27,7 +27,7 @@ __all__ = [
     "DocChunk",
     "Finding",
     "Citation",
-    "MatrixRow",
+    "Requirement",
     "Question",
     "Notification",
     "TeamMember",

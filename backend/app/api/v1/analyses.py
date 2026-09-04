@@ -72,6 +72,7 @@ def _to_response(a: Analysis, *, with_pages: bool = True) -> dict:
         "pages": (a.pages or []) if with_pages else [],
         "versions": a.versions or [],
         "coverage": a.coverage or {},
+        "ledger": a.ledger or {},
         "research": a.research or {},
     }
 

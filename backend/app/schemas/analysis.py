@@ -17,6 +17,7 @@ from app.schemas.common import (
     Gate,
     GoNoGo,
     KeyDate,
+    LedgerDelta,
     RiskItem,
     SilentItem,
     Stage,
@@ -108,6 +109,8 @@ class AnalysisResponse(CamelModel):
     versions: list[VersionRecord]
     #: What was read and what was not. Empty on an analysis that has not run.
     coverage: Coverage = Coverage()
+    #: What the last run changed in the Requirement Ledger.
+    ledger: LedgerDelta = LedgerDelta()
     #: Only a deep-research pass fills this in; every other mode leaves it at
     #: its "not_requested" default.
     research: ExternalResearch = ExternalResearch()

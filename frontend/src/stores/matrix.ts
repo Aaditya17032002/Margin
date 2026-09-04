@@ -97,8 +97,10 @@ export const useMatrixStore = create<MatrixState>()(
     },
 
     restoreRow: (row, index) => {
-      // The server has no undelete for a row, so an undo re-creates it. The id
-      // it comes back with is the server's, and the local copy takes it.
+      // Dismissing a requirement marks it `removed` rather than erasing it, and
+      // re-creating one whose words the ledger already knows reopens that same
+      // row — same id, same history, same owner. So an undo is a POST, and the
+      // id that comes back is the one the row had before.
       set((s) => {
         s.rows.splice(Math.min(index, s.rows.length), 0, row);
       });

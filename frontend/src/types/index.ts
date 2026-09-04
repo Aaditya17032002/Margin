@@ -283,6 +283,21 @@ export interface Coverage {
   complete: boolean;
 }
 
+/**
+ * What the last run changed in the Requirement Ledger.
+ *
+ * `removedWithWork` is the field that matters: requirements somebody had
+ * already assigned or drafted against, that the newest read of the package no
+ * longer finds. That is a question for a person, not a number on a dashboard.
+ */
+export interface LedgerDelta {
+  added: number;
+  updated: number;
+  unchanged: number;
+  removed: number;
+  removedWithWork: string[];
+}
+
 export interface Analysis {
   id: string;
   title: string;
@@ -327,22 +342,50 @@ export interface Analysis {
   versions: { id: string; label: string; at: string; author: string; note: string }[];
   /** The reading ledger for the last run. Absent on an analysis that has not run. */
   coverage?: Coverage;
+  /** What the last run added to, changed in, or stopped finding in the ledger. */
+  ledger?: LedgerDelta;
   /** Only a deep-research pass fills this in; other modes leave it empty. */
   research?: ExternalResearch;
 }
 
+/** How a requirement can be checked. */
+export type Verification = "mechanical" | "substantive";
+
+/** Where a requirement stands in the ledger. Nothing is ever deleted. */
+export type RequirementState = "open" | "superseded" | "removed";
+
+/**
+ * One requirement, shown as a matrix row.
+ *
+ * The matrix is a projection of the Requirement Ledger, not a separate list.
+ * `key` is the requirement's identity — derived from its own words — which is
+ * what lets an owner and a status survive a re-read of the package.
+ */
 export interface MatrixRow {
   id: string;
   analysisId: string;
+  /** Stable across runs and re-parses. */
+  key?: string;
   reference: string;
   requirement: string;
   type: RequirementType;
   stakes: Stakes;
+  /** The extraction category: obligation, instruction, limit, form, certification, volume. */
+  kind?: string;
+  /** `mechanical` rules are counted, never judged by a model. */
+  verification?: Verification;
+  state?: RequirementState;
+  /** Which passes found it: sweep, model, manual. */
+  sources?: string[];
   owner: string | null;
   responseLocation: string;
   status: MatrixStatus;
   citation: Citation;
   note?: string;
+  /** Who cleared it. A mandatory requirement is never satisfied without a name. */
+  confirmedBy?: string | null;
+  confirmedAt?: string | null;
+  history?: { at: string; event: string; detail: string }[];
 }
 
 export interface QAQuestion {

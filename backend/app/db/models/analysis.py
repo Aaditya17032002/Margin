@@ -100,3 +100,8 @@ class Analysis(UUIDMixin, SoftDeleteMixin, Base):
     #: Deterministic sweep totals for this run, so a drop in what the rules
     #: find is visible without re-running the pass.
     sweep: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    #: What the last run did to the Requirement Ledger: how many requirements
+    #: were added, changed, or stopped being found. A requirement disappearing
+    #: between runs is a finding, so the count is kept where a reviewer sees it.
+    #: Shape: {added, updated, unchanged, removed, removedWithWork: [...]}.
+    ledger: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)

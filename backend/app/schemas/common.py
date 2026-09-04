@@ -331,6 +331,21 @@ class Coverage(CamelModel):
     complete: bool = False
 
 
+class LedgerDelta(CamelModel):
+    """What the last run did to the Requirement Ledger.
+
+    A requirement the newest read stopped finding is not deleted, and this is
+    where that shows up. `removedWithWork` names the ones somebody had already
+    assigned or drafted against — those need a person, not a counter.
+    """
+
+    added: int = 0
+    updated: int = 0
+    unchanged: int = 0
+    removed: int = 0
+    removed_with_work: list[str] = []
+
+
 class FileNode(CamelModel):
     id: str
     name: str

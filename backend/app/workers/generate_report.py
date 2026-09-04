@@ -24,7 +24,7 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.db.base import async_session_factory
 from app.db.models.analysis import Analysis
-from app.db.models.matrix_row import MatrixRow
+from app.db.models.requirement import Requirement
 from app.db.models.question import Question
 from app.db.models.report import Report
 
@@ -76,9 +76,9 @@ async def generate_report_task(ctx: dict, report_id: str) -> dict:
 
             rows = (
                 await db.execute(
-                    select(MatrixRow)
-                    .where(MatrixRow.analysis_id == analysis.id)
-                    .order_by(MatrixRow.created_at.asc())
+                    select(Requirement)
+                    .where(Requirement.analysis_id == analysis.id, Requirement.state != "removed")
+                    .order_by(Requirement.document_id, Requirement.page, Requirement.reference)
                 )
             ).scalars().all()
             questions = (
@@ -128,7 +128,7 @@ def render(
     reports_dir: str,
     report: Report,
     analysis: Analysis,
-    rows: list[MatrixRow],
+    rows: list[Requirement],
     questions: list[Question],
 ) -> str:
     """Render in the format that was asked for.
@@ -151,7 +151,7 @@ def _render_docx(
     reports_dir: str,
     report: Report,
     analysis: Analysis,
-    rows: list[MatrixRow],
+    rows: list[Requirement],
     questions: list[Question],
 ) -> str:
     from docx import Document as DocxDocument
@@ -245,7 +245,7 @@ def _render_markdown(
     reports_dir: str,
     report: Report,
     analysis: Analysis,
-    rows: list[MatrixRow],
+    rows: list[Requirement],
     questions: list[Question],
 ) -> str:
     """The same report as plain text, for a wiki, an email, or a diff."""
@@ -329,7 +329,7 @@ def _render_markdown(
     if rows:
         out += ["", "## Compliance matrix", "", "| Reference | Requirement | Type | Owner | Status |", "| --- | --- | --- | --- | --- |"]
         for row in rows:
-            requirement = (row.requirement or "").replace("|", "\\|")
+            requirement = (row.text or "").replace("|", "\\|")
             out.append(
                 f"| {row.reference or ''} | {requirement} | {row.type or ''} | "
                 f"{row.owner or 'Unassigned'} | {row.status or ''} |"
@@ -529,7 +529,7 @@ def _findings(doc, analysis: Analysis) -> None:
             _quote(doc, finding.get("citation"))
 
 
-def _matrix(doc, rows: list[MatrixRow]) -> None:
+def _matrix(doc, rows: list[Requirement]) -> None:
     if not rows:
         return
     doc.add_heading("Compliance matrix", level=1)
@@ -540,7 +540,7 @@ def _matrix(doc, rows: list[MatrixRow]) -> None:
     for row in rows:
         cells = table.add_row().cells
         cells[0].text = row.reference or ""
-        cells[1].text = row.requirement or ""
+        cells[1].text = row.text or ""
         cells[2].text = row.type or ""
         cells[3].text = row.owner or "Unassigned"
         cells[4].text = row.status or ""

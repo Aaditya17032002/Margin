@@ -43,17 +43,45 @@ class MatrixRowUpdate(CamelModel):
 
 
 class MatrixRowResponse(CamelModel):
+    """One requirement, shown as a matrix row.
+
+    The first block is owned by the run and refreshed on every read of the
+    package; the second is owned by whoever is answering the solicitation and
+    a run never writes it. `key` is the identity that makes the difference
+    possible — it is derived from the requirement's own words, so the row
+    survives a re-read.
+    """
+
     id: str
     analysis_id: str = Field(alias="analysisId")
+    key: str = ""
     reference: str
     requirement: str
     type: str
     stakes: str
+    #: The extraction category: obligation, instruction, limit, form,
+    #: certification, volume.
+    kind: str = "obligation"
+    #: `mechanical` rules are checked by counting and never by a model;
+    #: `substantive` ones have to be read.
+    verification: str = "substantive"
+    #: `open`, `superseded` by an amendment, or `removed` — never deleted.
+    state: str = "open"
+    #: Which passes found it: sweep, model, manual. Both passes agreeing is
+    #: stronger than either alone.
+    sources: list[str] = []
+
     owner: str | None
     response_location: str = Field(alias="responseLocation")
     status: str
     citation: Citation
     note: str | None = None
+    #: Who cleared it. A mandatory requirement is never considered satisfied
+    #: without a person's name against it.
+    confirmed_by: str | None = Field(None, alias="confirmedBy")
+    confirmed_at: str | None = Field(None, alias="confirmedAt")
+    #: Append-only: {at, event, detail}.
+    history: list[dict] = []
 
 
 class BulkMatrixRequest(CamelModel):

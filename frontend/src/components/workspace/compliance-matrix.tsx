@@ -20,6 +20,7 @@ import { SearchField } from "@/components/ui/input";
 import { Checkbox, Combobox, Progress, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/controls";
 import { Pagination, Table, TableFrame, Td, Th, Tr } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/feedback";
+import { Tooltip } from "@/components/ui/overlay";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/overlay";
+import { Badge } from "@/components/ui/badge";
 import { notify } from "@/components/ui/toaster";
 import {
   CitationMeta,
@@ -74,6 +76,7 @@ export function ComplianceMatrix({
   const [typeFilter, setTypeFilter] = React.useState<RequirementType | "all">("all");
   const [stakesFilter, setStakesFilter] = React.useState<string>("all");
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
+  const [checkFilter, setCheckFilter] = React.useState<string>("all");
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [selection, setSelection] = React.useState<Record<string, boolean>>({});
 
@@ -88,9 +91,10 @@ export function ComplianceMatrix({
         if (typeFilter !== "all" && row.type !== typeFilter) return false;
         if (stakesFilter !== "all" && row.stakes !== stakesFilter) return false;
         if (statusFilter !== "all" && row.status !== statusFilter) return false;
+        if (checkFilter !== "all" && (row.verification ?? "substantive") !== checkFilter) return false;
         return true;
       }),
-    [scoped, typeFilter, stakesFilter, statusFilter],
+    [scoped, typeFilter, stakesFilter, statusFilter, checkFilter],
   );
 
   const owners = React.useMemo(
@@ -150,6 +154,7 @@ export function ComplianceMatrix({
               compact
               clamp={2}
             />
+            <Provenance row={row.original} />
           </div>
         ),
       },
@@ -204,6 +209,7 @@ export function ComplianceMatrix({
         accessorKey: "status",
         header: "Status",
         cell: ({ row }) => (
+          <div>
           <Select
             value={row.original.status}
             onValueChange={(value) => {
@@ -226,6 +232,8 @@ export function ComplianceMatrix({
               ))}
             </SelectContent>
           </Select>
+          <Clearance row={row.original} />
+          </div>
         ),
         size: 140,
       },
@@ -236,11 +244,11 @@ export function ComplianceMatrix({
           <Button
             variant="quiet"
             size="iconSm"
-            aria-label={`Delete ${row.original.reference}`}
+            aria-label={`Dismiss ${row.original.reference}`}
             onClick={() => {
               const removed = deleteRow(row.original.id);
               if (!removed) return;
-              notify.success("Requirement removed.", {
+              notify.success("Requirement dismissed.", {
                 description: removed.row.reference,
                 undo: () => restoreRow(removed.row, removed.index),
               });
@@ -291,7 +299,12 @@ export function ComplianceMatrix({
 
   const selectedIds = Object.keys(selection).filter((id) => selection[id]);
   const progress = matrixProgress(scoped);
-  const filtersActive = typeFilter !== "all" || stakesFilter !== "all" || statusFilter !== "all" || Boolean(query);
+  const filtersActive =
+    typeFilter !== "all" ||
+    stakesFilter !== "all" ||
+    statusFilter !== "all" ||
+    checkFilter !== "all" ||
+    Boolean(query);
 
   return (
     <div className={cn("flex flex-col gap-4", className)}>
@@ -348,6 +361,20 @@ export function ComplianceMatrix({
                 {MATRIX_STATUS_LABEL[status]}
               </SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+        {/* Mechanical rules are the ones a machine settles on its own — page
+            counts, fonts, forms, file names. Being able to see only those, or
+            only the ones needing a judgement, is how a compliance lead splits
+            an afternoon's work from a week's. */}
+        <Select value={checkFilter} onValueChange={setCheckFilter}>
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Any check</SelectItem>
+            <SelectItem value="mechanical">Counted</SelectItem>
+            <SelectItem value="substantive">Needs judgement</SelectItem>
           </SelectContent>
         </Select>
         {filtersActive ? (
@@ -544,6 +571,90 @@ export function ComplianceMatrix({
         </TableFrame>
       )}
     </div>
+  );
+}
+
+/**
+ * How this requirement is known, and how it can be checked.
+ *
+ * Both halves matter to whoever is signing the response. A requirement the
+ * pattern sweep and a specialist both found is stronger than one only a model
+ * saw; a requirement that can be checked by counting should never be argued
+ * about. Neither fact is visible in the requirement's text, so it is shown
+ * beside it rather than left to be assumed.
+ */
+function Provenance({ row }: { row: MatrixRow }) {
+  const sources = row.sources ?? [];
+  const mechanical = (row.verification ?? "substantive") === "mechanical";
+  const bothPasses = sources.includes("sweep") && sources.includes("model");
+  const modelOnly = sources.includes("model") && !sources.includes("sweep");
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <Tooltip
+        content={
+          mechanical
+            ? "Checked by counting — page limits, fonts, margins, forms, file names. Never decided by a model."
+            : "Needs a person to read it. A model can draft the assessment; it cannot settle it."
+        }
+      >
+        <Badge tone={mechanical ? "slate" : "neutral"} shape="mono">
+          {mechanical ? "Counted" : "Judgement"}
+        </Badge>
+      </Tooltip>
+      {bothPasses ? (
+        <Tooltip content="Found by the deterministic sweep and by a specialist. Agreement between the two is the strongest signal extraction produces.">
+          <Badge tone="leaf" shape="mono">
+            Corroborated
+          </Badge>
+        </Tooltip>
+      ) : null}
+      {modelOnly ? (
+        <Tooltip content="Only a specialist reported this — no pattern matched it. Worth reading against the source before relying on it.">
+          <Badge tone="ochre" shape="mono">
+            Model only
+          </Badge>
+        </Tooltip>
+      ) : null}
+      {sources.includes("manual") ? (
+        <Tooltip content="Added or edited by hand. A run that does not find it will leave it alone.">
+          <Badge tone="neutral" shape="mono">
+            By hand
+          </Badge>
+        </Tooltip>
+      ) : null}
+      {row.state === "removed" ? (
+        <Tooltip content="The latest read of the package did not find this. It is kept so it can be accounted for, not deleted.">
+          <Badge tone="seal" shape="mono">
+            Not in latest read
+          </Badge>
+        </Tooltip>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * A disqualifying requirement is not cleared because a model said so.
+ *
+ * Marking one complete records who did it; until then the row says what is
+ * missing. This is the difference between a matrix that tracks work and one
+ * that launders an assumption into a green tick.
+ */
+function Clearance({ row }: { row: MatrixRow }) {
+  if (row.stakes !== "disqualifying" || row.status !== "complete") return null;
+  if (row.confirmedBy) {
+    return (
+      <p className="mt-1 flex items-center gap-1 text-2xs text-leaf">
+        <Check className="size-3" />
+        Confirmed by {row.confirmedBy}
+      </p>
+    );
+  }
+  return (
+    <p className="mt-1 text-2xs text-[color-mix(in_oklab,var(--ochre)_82%,var(--ink))]">
+      Needs a person to confirm
+    </p>
   );
 }
 
