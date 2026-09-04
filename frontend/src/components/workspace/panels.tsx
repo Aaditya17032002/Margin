@@ -890,6 +890,9 @@ export function AmendmentsPanel({ analysis }: { analysis: Analysis }) {
 
   const target = analysis.amendments.find((a) => a.id === right) ?? analysis.amendments[0];
   const critical = target.changes.filter((c) => c.critical);
+  // The question an amendment actually raises: which of our answers is now
+  // wrong? It leads the panel, above the diff that explains why.
+  const invalidated = analysis.ledger?.invalidated ?? [];
 
   return (
     <div className="space-y-5">
@@ -932,6 +935,26 @@ export function AmendmentsPanel({ analysis }: { analysis: Analysis }) {
           </div>
         </div>
       </Panel>
+
+      {invalidated.length > 0 ? (
+        <Callout
+          tone="seal"
+          title={`${pluralize(invalidated.length, "answer")} written against wording that changed`}
+        >
+          <ul className="mt-1 space-y-1">
+            {invalidated.map((entry) => (
+              <li key={entry} className="text-sm leading-relaxed">
+                {entry}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+            The work moved to the replacement requirement and kept its owner, but not its status —
+            an answer to the old wording is not an answer to the new one until someone confirms it
+            still holds.
+          </p>
+        </Callout>
+      ) : null}
 
       {critical.length > 0 ? (
         <Callout tone="seal" title={`${pluralize(critical.length, "change")} moved a deadline or a gate`}>

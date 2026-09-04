@@ -21,7 +21,9 @@ from app.db.models.document import Document
 from app.db.models.doc_chunk import DocChunk
 from app.db.models.notification import Notification
 from app.db.models.question import Question
+from app.db.models.requirement import Requirement
 from app.db.models.user import User
+from app.pipeline import amendments
 from app.pipeline.anchor import CitationAnchor
 from app.pipeline.corpus import Corpus, build_corpus
 from app.pipeline.coverage import CoverageLedger, summarise as coverage_summary
@@ -149,6 +151,10 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
             coverage = ledger.build()
             analysis.coverage = coverage
 
+            # Kept before the overwrite: a deadline that moved is the one
+            # amendment change that can cost the bid on its own, and it is only
+            # visible against what the previous read said.
+            previous_dates = list(analysis.dates or [])
             analysis.dates = build_schedule(orchestration.get("dates") or [])
             analysis.summary = derive.summary(analysis.title, findings, gate_list)
 
@@ -196,16 +202,28 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
                     from_sweep(sweep_result.hits, anchor),
                     from_findings(analysis.legal),
                 )
-                analysis.ledger = (
-                    await reconcile(
-                        db,
-                        analysis_id=analysis.id,
-                        org_id=analysis.org_id,
-                        drafts=drafts,
-                        run_id=version_id,
-                        introduced_by=corpus.documents[0].id if corpus.documents else "",
-                    )
-                ).as_dict()
+                reconciliation = await reconcile(
+                    db,
+                    analysis_id=analysis.id,
+                    org_id=analysis.org_id,
+                    drafts=drafts,
+                    run_id=version_id,
+                    introduced_by=corpus.documents[0].id if corpus.documents else "",
+                )
+                analysis.ledger = reconciliation.as_dict()
+
+                # ── Step 5: what an amendment changed ───────────────────
+                # A reworded clause reaches the ledger as one removal and one
+                # addition. Pairing them back up is what turns that into the
+                # question a proposal manager actually has: which of our
+                # answers is now wrong?
+                await _amendment_impact(
+                    db,
+                    analysis,
+                    corpus=corpus,
+                    reconciliation=reconciliation,
+                    previous_dates=previous_dates,
+                )
             if "qa" in roster:
                 await _write_questions(db, analysis, derive.questions(orchestration.get("questions", [])))
 
@@ -263,6 +281,83 @@ async def _persist_chunks(
         )
     await db.flush()
     logger.info("chunks_persisted", analysis_id=analysis.id, chunks=len(corpus.chunks))
+
+
+async def _amendment_impact(
+    db: AsyncSession,
+    analysis: Analysis,
+    *,
+    corpus: Corpus,
+    reconciliation,
+    previous_dates: list[dict],
+) -> None:
+    """Record what this read changed, when the package contains an amendment.
+
+    Only runs when there is an amendment in the package: on a first read of a
+    base solicitation every requirement is new, and calling that "23 additions"
+    would be noise dressed as a finding.
+    """
+    amendment_docs = [doc for doc in corpus.documents if doc.kind == "amendment"]
+    if not amendment_docs:
+        return
+
+    rows = (
+        await db.execute(select(Requirement).where(Requirement.analysis_id == analysis.id))
+    ).scalars().all()
+    by_key = {row.key: row for row in rows}
+    amendment_ids = {doc.id for doc in amendment_docs}
+
+    added_rows = [by_key[key] for key in reconciliation.added if key in by_key]
+    removed_rows = [by_key[key] for key in reconciliation.removed if key in by_key]
+
+    # The base document still contains the wording an amendment replaced, so a
+    # replacement arrives as an addition with no matching removal. Anything the
+    # amendment introduced is therefore matched against what was already
+    # standing elsewhere in the package: amendments win.
+    from_amendment = [row for row in added_rows if row.document_id in amendment_ids]
+    standing = [
+        row
+        for row in rows
+        if row.state == "open"
+        and row.document_id not in amendment_ids
+        and row.key not in set(reconciliation.added)
+    ]
+
+    pairs = amendments.pair(removed_rows, added_rows) + amendments.pair(standing, from_amendment)
+    invalidated = amendments.apply(pairs, by_key)
+
+    # A withdrawal leaves no replacement to pair with — the clause simply stops
+    # applying, while still sitting in the base document looking live. The
+    # amendment's own words are the only evidence, so they are read directly.
+    superseded = {link.old_key for link in pairs}
+    references = amendments.withdrawn_references(
+        "\n".join(chunk.text for chunk in corpus.chunks if chunk.document_id in amendment_ids)
+    )
+    withdrawn = amendments.withdraw(
+        references, [row for row in standing if row.key not in superseded]
+    )
+    removed_keys = [*reconciliation.removed, *(row.key for row in withdrawn)]
+
+    date_changes = amendments.date_diff(previous_dates, analysis.dates or [])
+
+    record = amendments.record(
+        label=amendment_docs[-1].name,
+        issued=datetime.now(UTC).isoformat(),
+        pairs=pairs,
+        added_keys=reconciliation.added,
+        removed_keys=removed_keys,
+        rows_by_key=by_key,
+        date_changes=date_changes,
+    )
+    if not record["changes"]:
+        # An amendment that touched nothing this analysis tracks is worth
+        # saying once in the log, and not worth a record that looks like news.
+        logger.info("amendment_no_tracked_changes", analysis_id=analysis.id, label=record["label"])
+        return
+
+    analysis.amendments = [*(analysis.amendments or []), record]
+    analysis.ledger = {**(analysis.ledger or {}), "invalidated": invalidated}
+    await db.flush()
 
 
 async def _write_questions(db: AsyncSession, analysis: Analysis, questions: list[dict]) -> None:

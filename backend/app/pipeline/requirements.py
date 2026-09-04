@@ -168,6 +168,14 @@ def classify_stakes(kind: str, text: str) -> str:
         return "disqualifying"
     if kind in _INFORMATIONAL_KINDS:
         return "informational"
+    # A countable rule is disqualifying by default. Page limits, fonts,
+    # margins, file names, missing forms and unsigned certifications are the
+    # things proposals are actually thrown out for, and they arrive as ordinary
+    # obligation sentences — "Text shall be 12-point Times New Roman" is not a
+    # scored preference. Erring toward disqualifying costs an afternoon;
+    # erring the other way costs the bid.
+    if classify_verification(kind, text) == MECHANICAL:
+        return "disqualifying"
     return "scored"
 
 
@@ -298,7 +306,29 @@ def merge(*groups: list[RequirementDraft]) -> list[RequirementDraft]:
             # disqualifying, it is treated as disqualifying.
             if draft.stakes == "disqualifying":
                 existing.stakes = "disqualifying"
-    return sorted(merged.values(), key=lambda d: (d.document_id, d.page, d.reference))
+    return _drop_fragments(sorted(merged.values(), key=lambda d: (d.document_id, d.page, d.reference)))
+
+
+def _drop_fragments(drafts: list[RequirementDraft]) -> list[RequirementDraft]:
+    """Remove a requirement that is a fragment of another on the same page.
+
+    Overlapping patterns produce near-duplicates — "The Offeror shall submit a
+    plan" and "Offeror shall submit a plan" are one requirement caught twice,
+    and shipping both means a compliance lead assigns the same work to two
+    people. The longer capture wins because it carries the subject.
+    """
+    kept: list[RequirementDraft] = []
+    for draft in sorted(drafts, key=lambda d: -len(d.text)):
+        body = normalize(draft.text)
+        if any(
+            other.document_id == draft.document_id
+            and other.page == draft.page
+            and body in normalize(other.text)
+            for other in kept
+        ):
+            continue
+        kept.append(draft)
+    return sorted(kept, key=lambda d: (d.document_id, d.page, d.reference))
 
 
 def _citation_for(hit: SweepHit, anchor) -> dict:

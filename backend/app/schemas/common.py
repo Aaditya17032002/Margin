@@ -344,6 +344,9 @@ class LedgerDelta(CamelModel):
     unchanged: int = 0
     removed: int = 0
     removed_with_work: list[str] = []
+    #: Answers already written against wording an amendment has since replaced.
+    #: Named rather than counted: each one is a section somebody has to revisit.
+    invalidated: list[str] = []
 
 
 class FileNode(CamelModel):

@@ -296,6 +296,8 @@ export interface LedgerDelta {
   unchanged: number;
   removed: number;
   removedWithWork: string[];
+  /** Answers written against wording an amendment has since replaced. */
+  invalidated?: string[];
 }
 
 export interface Analysis {

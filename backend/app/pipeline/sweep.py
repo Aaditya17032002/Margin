@@ -113,7 +113,14 @@ def _pattern(name: str, expr: str, flags: int = re.IGNORECASE) -> tuple[str, re.
 # the period inside "SAM.gov" or "FAR 52.204-8", which used to truncate a third
 # of the certification hits mid-token.
 _END = r"(?:[.;](?=\s|$)|$)"
-_SENTENCE = r"(?:(?<=^)|(?<=[.;\n]))\s*[^;\n]{{0,140}}?\b{modal}\b[^;\n]{{0,220}}?" + _END
+# The run-up to the modal must not cross a sentence break either. It used to,
+# so "…12-point Times New Roman. L.2 Offerors must submit Standard Form 33"
+# matched as one obligation starting inside the previous sentence — two
+# requirements welded together, and a duplicate of each.
+_RUN_UP = r"(?:(?!\.\s)[^;\n])"
+_SENTENCE = (
+    r"(?:(?<=^)|(?<=[.;\n]))\s*" + _RUN_UP + r"{{0,140}}?\b{modal}\b[^;\n]{{0,220}}?" + _END
+)
 
 OBLIGATION_PATTERNS = [
     _pattern("modal.shall", _SENTENCE.format(modal=r"shall(?:\s+not)?")),
