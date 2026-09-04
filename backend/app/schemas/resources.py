@@ -40,6 +40,8 @@ class MatrixRowUpdate(CamelModel):
     response_location: str | None = Field(None, alias="responseLocation")
     status: MatrixStatus | None = None
     note: str | None = None
+    #: The team's internal date for answering this, not the solicitation's.
+    due_at: str | None = Field(None, alias="dueAt")
 
 
 class MatrixRowResponse(CamelModel):
@@ -80,6 +82,8 @@ class MatrixRowResponse(CamelModel):
     #: without a person's name against it.
     confirmed_by: str | None = Field(None, alias="confirmedBy")
     confirmed_at: str | None = Field(None, alias="confirmedAt")
+    #: The team's internal date for answering this, not the solicitation's.
+    due_at: str | None = Field(None, alias="dueAt")
     #: Append-only: {at, event, detail}.
     history: list[dict] = []
 
@@ -152,6 +156,9 @@ class QuestionCreate(CamelModel):
     source_kind: str = Field("manual", alias="sourceKind")
     go_no_go_impact: bool = Field(False, alias="goNoGoImpact")
     citation: Citation | None = None
+    #: The requirement this question is about, when it is about one. It is
+    #: what lets the answer reach the clause rather than stopping at a list.
+    requirement_id: str | None = Field(None, alias="requirementId")
 
 
 class QuestionUpdate(CamelModel):
@@ -159,6 +166,19 @@ class QuestionUpdate(CamelModel):
     rationale: str | None = None
     go_no_go_impact: bool | None = Field(None, alias="goNoGoImpact")
     sent: bool | None = None
+    requirement_id: str | None = Field(None, alias="requirementId")
+
+
+class QuestionAnswer(CamelModel):
+    """What the agency said back.
+
+    Stored verbatim. A Q&A answer is a contract document and the wording is
+    the whole of it — a paraphrase of one is worth nothing in a dispute.
+    """
+
+    answer: str
+    #: Where it came from: "Amendment 0002", "Q&A set 1", an email date.
+    source: str = ""
 
 
 class QuestionResponse(CamelModel):
@@ -171,6 +191,17 @@ class QuestionResponse(CamelModel):
     order: int
     sent: bool
     citation: Citation | None = None
+
+    #: `draft`, `submitted`, `answered` or `withdrawn`. A question is not
+    #: finished when it is sent — the answer is the point.
+    status: str = "draft"
+    submitted_at: str | None = Field(None, alias="submittedAt")
+    answered_at: str | None = Field(None, alias="answeredAt")
+    answer: str | None = None
+    answer_source: str = Field("", alias="answerSource")
+    requirement_id: str | None = Field(None, alias="requirementId")
+    #: What the answer changed, when it changed anything.
+    history: list[dict] = []
 
 
 class ReorderRequest(CamelModel):

@@ -13,8 +13,9 @@ import {
 } from "@tanstack/react-table";
 import { Check, Download, Filter, Plus, Trash2, X } from "lucide-react";
 
-import { cn, pluralize } from "@/lib/utils";
+import { cn, pluralize, saveTextFile } from "@/lib/utils";
 import { matrixProgress } from "@/lib/derive";
+import { matrixApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/input";
 import { Checkbox, Combobox, Progress, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/controls";
@@ -200,6 +201,12 @@ export function ComplianceMatrix({
         size: 150,
       },
       {
+        accessorKey: "dueAt",
+        header: "Due",
+        cell: ({ row }) => <DueDateCell row={row.original} onCommit={updateRow} />,
+        size: 130,
+      },
+      {
         accessorKey: "responseLocation",
         header: "Response location",
         cell: ({ row }) => <EditableCell row={row.original} onCommit={updateRow} />,
@@ -367,6 +374,7 @@ export function ComplianceMatrix({
             counts, fonts, forms, file names. Being able to see only those, or
             only the ones needing a judgement, is how a compliance lead splits
             an afternoon's work from a week's. */}
+        <ExportButton analysisId={analysisId} className="ml-auto" />
         <Select value={checkFilter} onValueChange={setCheckFilter}>
           <SelectTrigger className="w-40">
             <SelectValue />
@@ -502,20 +510,7 @@ export function ComplianceMatrix({
             Delete
           </Button>
 
-          <Button
-            variant="quiet"
-            size="sm"
-            className="ml-auto"
-            onClick={() => {
-              notify.success("Matrix exported.", {
-                description: `${pluralize(selectedIds.length, "row")} written to DOCX.`,
-                action: { label: "Download", onClick: () => notify.info("Download started.") },
-              });
-            }}
-          >
-            <Download />
-            Export selection
-          </Button>
+          <ExportButton analysisId={analysisId} className="ml-auto" />
         </div>
       ) : null}
 
@@ -583,6 +578,75 @@ export function ComplianceMatrix({
  * about. Neither fact is visible in the requirement's text, so it is shown
  * beside it rather than left to be assumed.
  */
+/**
+ * The matrix as a spreadsheet a compliance lead can work in.
+ *
+ * Exports every row rather than the selection: a partial matrix that looks
+ * like a whole one is how a requirement gets left out of the working copy.
+ * The citation travels on each row, so the file does not become a list of
+ * assertions the moment it is opened somewhere else.
+ */
+/**
+ * The team's internal date for answering a requirement.
+ *
+ * Not the solicitation's deadline — that is the same for every row and is
+ * already on the calendar. This is the date that actually governs whether the
+ * work happens, and it is the field a status meeting is run from.
+ */
+function DueDateCell({
+  row,
+  onCommit,
+}: {
+  row: MatrixRow;
+  onCommit: (id: string, patch: Partial<MatrixRow>) => void;
+}) {
+  const value = row.dueAt ? row.dueAt.slice(0, 10) : "";
+  const overdue = Boolean(row.dueAt && new Date(row.dueAt) < new Date() && row.status !== "complete");
+  return (
+    <input
+      type="date"
+      value={value}
+      aria-label={`Due date for ${row.reference}`}
+      onChange={(event) => onCommit(row.id, { dueAt: event.target.value || null })}
+      className={cn(
+        "h-8 w-full rounded-sm border border-line bg-paper px-2 text-xs tabular-nums text-ink",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-patina/40",
+        overdue && "border-seal/50 text-seal",
+      )}
+    />
+  );
+}
+
+function ExportButton({ analysisId, className }: { analysisId?: string; className?: string }) {
+  const [busy, setBusy] = React.useState(false);
+  if (!analysisId) return null;
+  return (
+    <Button
+      variant="quiet"
+      size="sm"
+      className={className}
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          const csv = await matrixApi.exportCsv(analysisId);
+          saveTextFile(`compliance-matrix-${analysisId}.csv`, csv);
+          notify.success("Matrix exported.", {
+            description: "Every row, with the clause and page it came from.",
+          });
+        } catch {
+          notify.error("The matrix could not be exported.");
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <Download />
+      {busy ? "Exporting…" : "Export CSV"}
+    </Button>
+  );
+}
+
 function Provenance({ row }: { row: MatrixRow }) {
   const sources = row.sources ?? [];
   const mechanical = (row.verification ?? "substantive") === "mechanical";

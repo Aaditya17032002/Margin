@@ -12,10 +12,13 @@ deleted, so re-running an analysis quietly reset the team's work.
 
 from __future__ import annotations
 
+import csv
+import io
 import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from app.core.deps import CurrentUser, DbSession
@@ -56,6 +59,7 @@ def _to_response(r: Requirement) -> dict:
         "note": r.note,
         "confirmedBy": r.confirmed_by,
         "confirmedAt": r.confirmed_at.isoformat() if r.confirmed_at else None,
+        "dueAt": r.due_at.isoformat() if r.due_at else None,
         "history": r.history or [],
     }
 
@@ -78,6 +82,66 @@ async def list_matrix(
         query = query.where(Requirement.state != "removed")
     result = await db.execute(query.order_by(Requirement.document_id, Requirement.page, Requirement.reference))
     return [_to_response(r) for r in result.scalars().all()]
+
+
+#: The spreadsheet a compliance lead actually works in. Column order matters:
+#: the clause first, then what it demands, then who owns answering it.
+_EXPORT_COLUMNS = [
+    ("Reference", lambda r: r.reference or ""),
+    ("Requirement", lambda r: r.text or ""),
+    ("Type", lambda r: r.type or ""),
+    ("Stakes", lambda r: r.stakes or ""),
+    # Whether it is settled by counting or by reading changes who should own it
+    # and how long it takes, so it travels with the row.
+    ("Check", lambda r: "counted" if r.verification == "mechanical" else "read"),
+    ("Found by", lambda r: ", ".join(r.sources or []) or "—"),
+    ("State", lambda r: r.state or "open"),
+    ("Owner", lambda r: r.owner or ""),
+    ("Due", lambda r: r.due_at.date().isoformat() if r.due_at else ""),
+    ("Response location", lambda r: r.response_location or ""),
+    ("Status", lambda r: r.status or ""),
+    ("Signed off by", lambda r: r.confirmed_by or ""),
+    ("Document", lambda r: (r.citation or {}).get("documentName", "")),
+    ("Page", lambda r: str((r.citation or {}).get("page", "") or "")),
+    ("Quote", lambda r: (r.citation or {}).get("quote", "")),
+    ("Note", lambda r: r.note or ""),
+]
+
+
+@router.get("/analyses/{analysis_id}/matrix/export")
+async def export_matrix(
+    analysis_id: str,
+    user: CurrentUser,
+    db: DbSession,
+    include_removed: bool = Query(False, alias="includeRemoved"),
+):
+    """The matrix as a spreadsheet, with the citation on every row.
+
+    A matrix that leaves the product without its citations becomes a list of
+    assertions the moment it is opened somewhere else, so the document, page
+    and quote travel with each requirement.
+    """
+    query = select(Requirement).where(
+        Requirement.analysis_id == analysis_id, Requirement.org_id == user.org_id
+    )
+    if not include_removed:
+        query = query.where(Requirement.state != "removed")
+    rows = (
+        await db.execute(query.order_by(Requirement.document_id, Requirement.page, Requirement.reference))
+    ).scalars().all()
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([name for name, _ in _EXPORT_COLUMNS])
+    for row in rows:
+        writer.writerow([extract(row) for _, extract in _EXPORT_COLUMNS])
+    buffer.seek(0)
+
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="compliance-matrix-{analysis_id}.csv"'},
+    )
 
 
 @router.post("/analyses/{analysis_id}/matrix", status_code=status.HTTP_201_CREATED)
@@ -161,6 +225,10 @@ async def update_matrix_row(analysis_id: str, row_id: str, body: MatrixRowUpdate
                 row.sources = sorted({*(row.sources or []), "manual"})
                 events.append("requirement text edited by hand")
             continue
+        if key == "due_at":
+            row.due_at = _parse_date(value)
+            events.append(f"due {value}" if value else "due date cleared")
+            continue
         column = "response_location" if key == "response_location" else key
         if hasattr(row, column) and getattr(row, column) != value:
             setattr(row, column, value)
@@ -234,6 +302,21 @@ async def bulk_matrix(analysis_id: str, body: BulkMatrixRequest, user: CurrentUs
             row.history = [*(row.history or []), {"at": now.isoformat(), "event": "edited", "detail": "; ".join(detail)}]
     await db.flush()
     return {"updated": len(rows)}
+
+
+def _parse_date(value):
+    """An ISO date or timestamp, or nothing.
+
+    An unparseable date clears the field rather than raising: a due date is a
+    convenience, and failing an edit that also changed the owner would lose the
+    part that mattered.
+    """
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 async def _row(db, analysis_id: str, row_id: str, org_id: str) -> Requirement:

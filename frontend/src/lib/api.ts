@@ -30,7 +30,9 @@ import type {
   SessionUser,
   Template,
   TeamMember,
+  AuditEntry,
   VerificationQueue,
+  WorkItem,
 } from "@/types";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
@@ -127,6 +129,32 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
 }
+
+/**
+ * The same request, returning the body as text.
+ *
+ * For endpoints that answer with a file rather than JSON. It shares the auth
+ * and refresh behaviour so a download does not become the one call that
+ * silently fails after an hour.
+ */
+export async function apiText(path: string, options: ApiOptions = {}): Promise<string> {
+  const { auth = true, headers, body: _body, ...rest } = options;
+  const reqHeaders = new Headers(headers);
+  if (auth) {
+    const token = getAccessToken();
+    if (token) reqHeaders.set("Authorization", `Bearer ${token}`);
+  }
+
+  let res = await fetch(url(path), { ...rest, headers: reqHeaders });
+  if (res.status === 401 && auth && (await tryRefresh())) {
+    const retryHeaders = new Headers(reqHeaders);
+    retryHeaders.set("Authorization", `Bearer ${getAccessToken()}`);
+    res = await fetch(url(path), { ...rest, headers: retryHeaders });
+  }
+  if (!res.ok) throw await parseError(res);
+  return res.text();
+}
+
 
 async function tryRefresh(): Promise<boolean> {
   const refresh = getRefreshToken();
@@ -254,6 +282,32 @@ export const matrixApi = {
       method: "POST",
       body: { ids, ...patch },
     }),
+
+  /**
+   * The matrix as a spreadsheet, with the citation on every row.
+   *
+   * Fetched rather than linked: the endpoint needs the bearer token, and a
+   * plain anchor would not carry it. The CSV text comes back and the caller
+   * saves it.
+   */
+  exportCsv: (analysisId: string) =>
+    apiText(`/api/v1/analyses/${analysisId}/matrix/export`),
+};
+
+/* ------------------------------------------------------------------ */
+/* Accountability and the record                                        */
+/* ------------------------------------------------------------------ */
+
+export const governanceApi = {
+  /** Outstanding requirements, across every live pursuit, due date first. */
+  work: (owner?: string) =>
+    api<{ items: WorkItem[]; summary: { total: number; overdue: number; unscheduled: number } }>(
+      `/api/v1/work${owner ? `?owner=${encodeURIComponent(owner)}` : ""}`,
+    ),
+
+  /** Everything that happened to this analysis, newest first. */
+  audit: (analysisId: string) =>
+    api<{ entries: AuditEntry[]; total: number }>(`/api/v1/analyses/${analysisId}/audit`),
 };
 
 /* ------------------------------------------------------------------ */
@@ -336,6 +390,18 @@ export const questionsApi = {
       method: "PATCH",
       body: { orderedIds },
     }),
+
+  /**
+   * Record what the agency said back.
+   *
+   * Returns the requirements whose answers were reopened by it: a section
+   * written before a clarification is not an answer to the clarified clause.
+   */
+  answer: (analysisId: string, questionId: string, answer: string, source = "") =>
+    api<QAQuestion & { reopened: string[] }>(
+      `/api/v1/analyses/${analysisId}/questions/${questionId}/answer`,
+      { method: "POST", body: { answer, source } },
+    ),
 };
 
 /* ------------------------------------------------------------------ */

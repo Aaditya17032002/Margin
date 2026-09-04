@@ -107,6 +107,10 @@ class Requirement(UUIDMixin, Base):
         default="unassigned",
     )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: When this requirement's answer has to be written by. Not the
+    #: solicitation's deadline — the team's internal one, which is the date
+    #: that actually governs whether the work happens.
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: A mandatory requirement marked satisfied by a model is not cleared until
     #: a person says so. This is that signature.
     confirmed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)

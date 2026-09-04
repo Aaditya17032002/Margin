@@ -26,7 +26,8 @@ import { ComplianceMatrix } from "./compliance-matrix";
 import { useAnalysesStore, allFindings } from "@/stores/analyses";
 import { useQAStore } from "@/stores/qa";
 import { useReportsStore } from "@/stores/workspace";
-import type { Analysis, GoNoGo, ResearchClaim, ResearchSource } from "@/types";
+import { governanceApi } from "@/lib/api";
+import type { Analysis, AuditEntry, GoNoGo, ResearchClaim, ResearchSource } from "@/types";
 
 /* ================================================================ */
 /* Go / No-Go                                                        */
@@ -1015,12 +1016,102 @@ function DiffMark({ kind }: { kind: "added" | "changed" | "removed" }) {
 /* Versions & activity                                               */
 /* ================================================================ */
 
+
+/**
+ * Everything that happened to this analysis, and who did it.
+ *
+ * Assembled on read from the append-only histories the requirement ledger, the
+ * response checks and the Q&A already keep. Nothing is written for this view:
+ * an audit log kept separately from the thing it describes is a second version
+ * of history, and the two eventually disagree.
+ */
+function AuditTrail({ analysis }: { analysis: Analysis }) {
+  const [entries, setEntries] = React.useState<AuditEntry[] | null>(null);
+  const [scope, setScope] = React.useState<string>("all");
+
+  React.useEffect(() => {
+    let live = true;
+    governanceApi
+      .audit(analysis.id)
+      .then((result) => {
+        if (live) setEntries(result.entries);
+      })
+      .catch(() => {
+        if (live) setEntries([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [analysis.id, analysis.updatedAt]);
+
+  if (!entries?.length) return null;
+
+  const scopes = ["all", ...Array.from(new Set(entries.map((entry) => entry.scope)))];
+  const visible = scope === "all" ? entries : entries.filter((entry) => entry.scope === scope);
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="The record"
+        description="Every change to this analysis, newest first — including the ones Margin made."
+        actions={
+          <Select value={scope} onValueChange={setScope}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {scopes.map((name) => (
+                <SelectItem key={name} value={name}>
+                  {name === "all" ? "Everything" : AUDIT_SCOPES[name] ?? name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+      />
+      <ol className="max-h-[28rem] divide-y divide-line overflow-y-auto">
+        {visible.slice(0, 200).map((entry, index) => (
+          <li key={`${entry.at}-${index}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-5 py-3">
+            <span className="w-32 shrink-0 font-mono text-2xs tabular-nums text-ink-faint">
+              {entry.at ? relative(entry.at) : "—"}
+            </span>
+            <Badge tone="neutral" shape="mono">
+              {AUDIT_SCOPES[entry.scope] ?? entry.scope}
+            </Badge>
+            <span className="font-mono text-2xs text-patina">{entry.subject}</span>
+            <span className="min-w-0 flex-1 text-xs leading-relaxed text-ink-soft">
+              <strong className="font-medium text-ink">{entry.event}</strong>
+              {entry.detail ? ` — ${entry.detail}` : ""}
+            </span>
+            <span className="shrink-0 text-2xs text-ink-faint">{entry.actor || "Margin"}</span>
+          </li>
+        ))}
+      </ol>
+      {visible.length > 200 ? (
+        <p className="px-5 py-3 text-2xs text-ink-faint">
+          Showing the most recent 200 of {visible.length}. The evidence pack carries all of them.
+        </p>
+      ) : null}
+    </Panel>
+  );
+}
+
+const AUDIT_SCOPES: Record<string, string> = {
+  run: "Run",
+  amendment: "Amendment",
+  requirement: "Requirement",
+  response: "Response",
+  question: "Question",
+};
+
 export function VersionsPanel({ analysis }: { analysis: Analysis }) {
   const allActivity = useReportsStore((s) => s.activity);
   const activity = allActivity.filter((a) => a.analysisId === analysis.id);
 
   return (
-    <div className="grid gap-6 @3xl:grid-cols-2">
+    <div className="space-y-6">
+      <AuditTrail analysis={analysis} />
+      <div className="grid gap-6 @3xl:grid-cols-2">
       <Panel>
         <PanelHeader title="Version history" description="Every pass Margin made, and every human who changed it." />
         {analysis.versions.length === 0 ? (
@@ -1076,6 +1167,7 @@ export function VersionsPanel({ analysis }: { analysis: Analysis }) {
           </ul>
         )}
       </Panel>
+      </div>
     </div>
   );
 }

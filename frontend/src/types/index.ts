@@ -389,6 +389,8 @@ export interface MatrixRow {
   /** Who cleared it. A mandatory requirement is never satisfied without a name. */
   confirmedBy?: string | null;
   confirmedAt?: string | null;
+  /** The team's internal date for answering this, not the solicitation's. */
+  dueAt?: string | null;
   history?: { at: string; event: string; detail: string }[];
 }
 
@@ -498,6 +500,15 @@ export interface VerificationQueue {
   items: VerificationItem[];
 }
 
+/**
+ * A question is not finished when it is sent.
+ *
+ * The answer is the point, and an answer that never reaches the requirement it
+ * was about has changed nothing — which is why a question can name the clause
+ * it concerns.
+ */
+export type QuestionStatus = "draft" | "submitted" | "answered" | "withdrawn";
+
 export interface QAQuestion {
   id: string;
   analysisId: string;
@@ -506,8 +517,46 @@ export interface QAQuestion {
   sourceKind: "silent" | "contradiction" | "ambiguity" | "manual";
   goNoGoImpact: boolean;
   order: number;
+  /** Kept in step with `status`; the lifecycle is the truth. */
   sent: boolean;
   citation?: Citation;
+
+  status?: QuestionStatus;
+  submittedAt?: string | null;
+  answeredAt?: string | null;
+  /** What the agency said, verbatim — never a paraphrase. */
+  answer?: string | null;
+  answerSource?: string;
+  /** The requirement this question is about, when it is about one. */
+  requirementId?: string | null;
+  history?: { at: string; event: string; detail: string }[];
+}
+
+/** One person's outstanding work, across every live pursuit. */
+export interface WorkItem {
+  requirementId: string;
+  analysisId: string;
+  analysisTitle: string;
+  solicitationNumber: string;
+  reference: string;
+  requirement: string;
+  stakes: Stakes;
+  verification: Verification;
+  owner: string | null;
+  status: MatrixStatus;
+  dueAt: string | null;
+  overdue: boolean;
+  responseLocation: string;
+}
+
+/** One thing that happened to an analysis, and who did it. */
+export interface AuditEntry {
+  at: string;
+  scope: "run" | "amendment" | "requirement" | "response" | "question";
+  subject: string;
+  event: string;
+  detail: string;
+  actor: string;
 }
 
 export interface AppNotification {

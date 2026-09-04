@@ -1,4 +1,10 @@
-"""Questions router — CRUD + reorder for Q&A builder."""
+"""Questions to the agency, from drafting to the answer coming back.
+
+A question is not finished when it is sent. The answer is the point, and an
+answer that never reaches the requirement it was about has changed nothing —
+so a question can name the clause it concerns, and recording the answer
+reopens the work done against the old reading of that clause.
+"""
 
 from __future__ import annotations
 
@@ -7,14 +13,22 @@ import uuid
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select, func
 
+from datetime import UTC, datetime
+
 from app.core.deps import CurrentUser, DbSession
+from app.core.logging import get_logger
 from app.db.models.question import Question
+from app.db.models.requirement import Requirement
+from app.db.models.response_check import ResponseCheck
 from app.schemas.resources import (
+    QuestionAnswer,
     QuestionCreate,
     QuestionResponse,
     QuestionUpdate,
     ReorderRequest,
 )
+
+logger = get_logger()
 
 router = APIRouter(tags=["questions"])
 
@@ -30,6 +44,13 @@ def _to_response(q: Question) -> dict:
         "order": q.order,
         "sent": q.sent,
         "citation": q.citation,
+        "status": q.status,
+        "submittedAt": q.submitted_at.isoformat() if q.submitted_at else None,
+        "answeredAt": q.answered_at.isoformat() if q.answered_at else None,
+        "answer": q.answer,
+        "answerSource": q.answer_source or "",
+        "requirementId": q.requirement_id,
+        "history": q.history or [],
     }
 
 
@@ -63,7 +84,10 @@ async def create_question(analysis_id: str, body: QuestionCreate, user: CurrentU
         go_no_go_impact=body.go_no_go_impact,
         order=order,
         sent=False,
+        status="draft",
+        requirement_id=body.requirement_id,
         citation=body.citation.model_dump() if body.citation else None,
+        history=[],
     )
     db.add(q)
     await db.flush()
@@ -97,12 +121,116 @@ async def update_question(analysis_id: str, question_id: str, body: QuestionUpda
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
 
     update_data = body.model_dump(exclude_unset=True, by_alias=False)
+    now = datetime.now(UTC)
     for key, value in update_data.items():
         col = "go_no_go_impact" if key == "go_no_go_impact" else key
         if hasattr(q, col):
             setattr(q, col, value)
+
+    # `sent` is the old boolean the workspace still reads. It is kept in step
+    # with the lifecycle rather than left to drift into disagreeing with it.
+    if "sent" in update_data:
+        if q.sent and q.status == "draft":
+            q.status = "submitted"
+            q.submitted_at = now
+            q.history = [*(q.history or []), _event(now, "submitted", "Sent to the agency.")]
+        elif not q.sent and q.status == "submitted":
+            q.status = "draft"
+            q.submitted_at = None
+            q.history = [*(q.history or []), _event(now, "unsent", "Pulled back to draft.")]
     await db.flush()
     return _to_response(q)
+
+
+@router.post("/analyses/{analysis_id}/questions/{question_id}/answer")
+async def record_answer(
+    analysis_id: str, question_id: str, body: QuestionAnswer, user: CurrentUser, db: DbSession
+):
+    """Record the agency's answer, and reopen what it invalidates.
+
+    An answer that only lands in a list has changed nothing. When the question
+    names a requirement, the answer is written into that requirement's history
+    and any response check that was *satisfied* against the old reading is
+    reopened — the same rule an amendment gets, for the same reason: an answer
+    written before the clarification is not an answer to the clarified clause.
+    """
+    q = await _question(db, analysis_id, question_id, user.org_id)
+    now = datetime.now(UTC)
+
+    q.answer = body.answer
+    q.answer_source = body.source[:255]
+    q.answered_at = now
+    q.status = "answered"
+    q.sent = True
+    if q.submitted_at is None:
+        q.submitted_at = now
+    q.history = [
+        *(q.history or []),
+        _event(now, "answered", f"{body.source or 'The agency'} answered: {body.answer[:300]}"),
+    ]
+
+    reopened: list[str] = []
+    if q.requirement_id:
+        requirement = (
+            await db.execute(
+                select(Requirement).where(
+                    Requirement.id == q.requirement_id, Requirement.analysis_id == analysis_id
+                )
+            )
+        ).scalar_one_or_none()
+        if requirement is not None:
+            requirement.history = [
+                *(requirement.history or []),
+                _event(
+                    now,
+                    "clarified",
+                    f"Answered by the agency ({body.source or 'Q&A'}): {body.answer[:300]}",
+                ),
+            ]
+            checks = (
+                await db.execute(
+                    select(ResponseCheck).where(ResponseCheck.requirement_id == requirement.id)
+                )
+            ).scalars().all()
+            for check in checks:
+                if check.status != "satisfied":
+                    continue
+                check.status = "unverifiable"
+                check.decided_by = "rule"
+                check.needs_confirmation = False
+                check.confirmed_by = None
+                check.confirmed_at = None
+                check.detail = (
+                    "The agency answered a question about this requirement after this was "
+                    "checked. The answer may change what compliance means here."
+                )
+                check.gap = "Re-read the answer against what the response says."
+                check.risk = "high" if requirement.stakes == "disqualifying" else "medium"
+                check.history = [
+                    *(check.history or []),
+                    _event(now, "reopened", f"Reopened by an agency answer ({body.source or 'Q&A'})."),
+                ]
+                reopened.append(requirement.reference)
+
+    await db.flush()
+    logger.info("question_answered", analysis_id=analysis_id, question=question_id, reopened=len(reopened))
+    return {**_to_response(q), "reopened": reopened}
+
+
+async def _question(db, analysis_id: str, question_id: str, org_id: str) -> Question:
+    result = await db.execute(
+        select(Question).where(
+            Question.id == question_id, Question.analysis_id == analysis_id, Question.org_id == org_id
+        )
+    )
+    q = result.scalar_one_or_none()
+    if not q:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
+    return q
+
+
+def _event(at, event: str, detail: str) -> dict:
+    return {"at": at.isoformat(), "event": event, "detail": detail}
 
 
 @router.delete("/analyses/{analysis_id}/questions/{question_id}", status_code=status.HTTP_204_NO_CONTENT)

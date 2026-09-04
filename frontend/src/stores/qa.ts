@@ -20,6 +20,14 @@ interface QAState extends RemoteSlice {
   toggleImpact: (id: string) => void;
   reorder: (analysisId: string, orderedIds: string[]) => void;
   markSent: (analysisId: string, ids?: string[]) => void;
+  /**
+   * Record what the agency said back.
+   *
+   * Returns the requirements whose answers this reopened — a section written
+   * before a clarification is not an answer to the clarified clause, and the
+   * caller has to be able to say so.
+   */
+  recordAnswer: (id: string, answer: string, source: string) => Promise<string[]>;
   clear: () => void;
 }
 
@@ -132,6 +140,24 @@ export const useQAStore = create<QAState>()(
         });
       });
       fireAndForget(questionsApi.reorder(analysisId, orderedIds));
+    },
+
+    recordAnswer: async (id, answer, source) => {
+      const target = get().questions.find((q) => q.id === id);
+      if (!target) return [];
+      try {
+        const updated = await questionsApi.answer(target.analysisId, id, answer, source);
+        set((s) => {
+          const local = s.questions.find((q) => q.id === id);
+          if (local) Object.assign(local, updated);
+        });
+        return updated.reopened ?? [];
+      } catch (error) {
+        set((s) => {
+          s.error = errorMessage(error, "The answer could not be recorded.");
+        });
+        return [];
+      }
     },
 
     markSent: (analysisId, ids) => {

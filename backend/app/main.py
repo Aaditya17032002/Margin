@@ -101,6 +101,7 @@ def create_app() -> FastAPI:
         activity,
         search,
         verification,
+        governance,
     )
 
     prefix = settings.API_V1_PREFIX
@@ -124,6 +125,7 @@ def create_app() -> FastAPI:
     app.include_router(activity.router, prefix=prefix)
     app.include_router(search.router, prefix=prefix)
     app.include_router(verification.router, prefix=prefix)
+    app.include_router(governance.router, prefix=prefix)
 
     # ── Health / Ready / Metrics ─────────────────────────────────────────
 
