@@ -148,6 +148,7 @@ async def resolve(
         )
 
     now = datetime.now(UTC)
+    impact: dict | None = None
     row.state = body.outcome
     row.resolution = body.resolution
     row.resolved_by = user.id
@@ -188,6 +189,15 @@ async def resolve(
             ]
             superseded = loser.reference
 
+            # Work answered against the clause that lost is not an answer to
+            # the one that governs. Walked through the graph so it reaches the
+            # checks and review findings on both halves of the pair and
+            # nothing beyond them.
+            impact = await _propagate(
+                db, analysis_id, [winner.id, loser.id], now,
+                detail=f"{winner.reference} governs over {loser.reference}: {body.resolution}",
+            )
+
     row.history = [
         *(row.history or []),
         {
@@ -212,7 +222,32 @@ async def resolve(
         .scalars()
         .all()
     }
-    return {**_to_response(row, requirements), "superseded": superseded}
+    return {**_to_response(row, requirements), "superseded": superseded, "impact": impact}
+
+
+async def _propagate(db, analysis_id: str, origins: list[str], now, *, detail: str) -> dict:
+    """Reopen the settled work that hangs off either half of a resolved pair."""
+    from app.db.models.question import Question
+    from app.db.models.response_check import ResponseCheck
+    from app.db.models.review import ReviewFinding
+    from app.pipeline import propagation
+
+    async def load(model):
+        return list((await db.execute(select(model).where(model.analysis_id == analysis_id))).scalars().all())
+
+    requirements = await load(Requirement)
+    graph = propagation.build_graph(
+        requirements=requirements,
+        checks=await load(ResponseCheck),
+        questions=await load(Question),
+        findings=await load(ReviewFinding),
+    )
+    impacts = propagation.propagate(
+        graph, origins, cause="a resolved contradiction", detail=detail, at=now
+    )
+    return propagation.summarise(
+        impacts, cause="a resolved contradiction", considered=len(requirements)
+    )
 
 
 async def _pair(db, analysis_id: str, winner_id: str, loser_id: str):

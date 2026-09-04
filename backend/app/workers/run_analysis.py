@@ -373,6 +373,17 @@ async def _amendment_impact(
     pairs = amendments.pair(removed_rows, added_rows) + amendments.pair(standing, from_amendment)
     invalidated = amendments.apply(pairs, by_key)
 
+    # Everything hanging off either half of a superseded pair: response checks,
+    # and the review findings somebody resolved against wording that has moved.
+    # Reached through the graph rather than by hand, so a Red Team finding is
+    # not quietly buried by an amendment.
+    if pairs:
+        await _propagate_amendment(
+            db, analysis, [by_key[link.old_key].id for link in pairs if link.old_key in by_key]
+            + [by_key[link.new_key].id for link in pairs if link.new_key in by_key],
+            label=amendment_docs[-1].name,
+        )
+
     # A withdrawal leaves no replacement to pair with — the clause simply stops
     # applying, while still sitting in the base document looking live. The
     # amendment's own words are the only evidence, so they are read directly.
@@ -404,6 +415,41 @@ async def _amendment_impact(
 
     analysis.amendments = [*(analysis.amendments or []), record]
     analysis.ledger = {**(analysis.ledger or {}), "invalidated": invalidated}
+    await db.flush()
+
+
+async def _propagate_amendment(
+    db: AsyncSession, analysis: Analysis, origins: list[str], *, label: str
+) -> None:
+    """Reopen what an amendment reached, and nothing else."""
+    from app.db.models.question import Question
+    from app.db.models.response_check import ResponseCheck
+    from app.db.models.review import ReviewFinding
+    from app.pipeline import propagation
+
+    async def load(model):
+        return list(
+            (await db.execute(select(model).where(model.analysis_id == analysis.id)))
+            .scalars()
+            .all()
+        )
+
+    requirements = await load(Requirement)
+    graph = propagation.build_graph(
+        requirements=requirements,
+        checks=await load(ResponseCheck),
+        questions=await load(Question),
+        findings=await load(ReviewFinding),
+    )
+    impacts = propagation.propagate(
+        graph, origins, cause=f"amendment {label}", detail="The clause it answers has changed."
+    )
+    analysis.ledger = {
+        **(analysis.ledger or {}),
+        "propagation": propagation.summarise(
+            impacts, cause=f"amendment {label}", considered=len(requirements)
+        ),
+    }
     await db.flush()
 
 

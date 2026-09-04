@@ -122,6 +122,46 @@ _COPIES = re.compile(
     r"original(?:\s+and\s+\w+\s+cop(?:y|ies))?|bound\s+cop(?:y|ies))"
 )
 _BINDING = re.compile(r"(?i)\b(three\s*-?\s*ring|spiral\s*-?\s*bound|tabbed|tab\s+dividers?|comb\s*-?\s*bound|binder)\b")
+#: A tab, a section marker, or a required ordering inside a volume.
+#: Two patterns rather than one: the sentence has to be *about* structure, and
+#: then every label in it counts. Requiring a structural verb after each label
+#: missed "Volume I shall contain Tab A, Tab B and Tab C", where the verb is
+#: before all three.
+_STRUCTURAL = re.compile(
+    r"(?ix)\b(?:shall|must|will)\s+(?:be\s+)?"
+    r"(?:contain|include|consist\s+of|comprise|be\s+organi[sz]ed|be\s+divided|be\s+tabbed)\b"
+)
+_TAB_LABEL = re.compile(r"(?ix)\b(?:tab|section|part)\s+(?P<label>[A-Z]|[IVX]+|\d{1,2})\b")
+
+#: Page numbering, headers and footers — countable in a rendered file and
+#: invisible in extracted text, like typography.
+_PAGINATION = re.compile(
+    r"(?ix)\b(?:page\s+number|numbered\s+consecutively|header|footer|running\s+head|"
+    r"pagination|page\s+\d+\s+of\s+\d+)\b"
+)
+
+#: A cross-reference to a form or attachment the response has to *include*, as
+#: opposed to one the solicitation merely mentions.
+_ENCLOSURE = re.compile(
+    r"(?ix)\b(?:enclos\w+|attach\w+|append\w+|include[d]?\s+(?:with|as))\b"
+)
+
+#: An acknowledgement of amendments — the single most common reason an
+#: otherwise compliant proposal is rejected.
+_AMENDMENT_ACK = re.compile(
+    r"(?ix)\b(?:acknowledg\w+)\b[^.;]{0,60}\b(?:amendment|modification)s?\b"
+    r"|\b(?:amendment|modification)s?\b[^.;]{0,40}\b(?:shall|must)\s+be\s+acknowledg\w+"
+)
+
+#: A due time, not a due date. "by 2:00 PM Eastern" is a rule proposals miss.
+_DUE_TIME = re.compile(
+    r"(?ix)\b(?P<time>\d{1,2}:\d{2}\s*(?:a\.?m\.?|p\.?m\.?)?)\s*"
+    r"(?P<zone>ET|EST|EDT|CT|CST|PT|PST|MT|local\s+time|Eastern|Central|Pacific|Mountain)?\b"
+)
+
+#: Language and units — a real requirement on international or scientific work.
+_LANGUAGE = re.compile(r"(?ix)\b(?:in\s+the\s+English\s+language|written\s+in\s+English|metric\s+units|SI\s+units)\b")
+
 _PORTAL = re.compile(
     r"(?i)\b(SAM\.gov|PASSPort|eBuy|GSA\s+eBuy|FedConnect|BidExpress|BonfireHub|Bonfire|"
     r"electronic\s+submission|submitted\s+(?:via|through)\s+(?:the\s+)?([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?))"
@@ -583,12 +623,131 @@ def _check_portal(text: str, _response: Corpus, _files: list[str]) -> Check | No
     )
 
 
+def _check_amendment_acknowledgement(text: str, response: Corpus, _files: list[str]) -> Check | None:
+    """Amendments acknowledged in the response.
+
+    The single most common reason an otherwise compliant proposal is thrown
+    out: the amendment was read, the response was updated, and nobody signed
+    the acknowledgement block. Worth its own rule because it is countable —
+    the response either names the amendments or it does not.
+    """
+    if not _AMENDMENT_ACK.search(text):
+        return None
+
+    body = _response_text(response)
+    named = {
+        " ".join(match.split()).lower()
+        for match in re.findall(r"(?i)\b(?:amendment|modification)\s+(?:no\.?\s*)?[\w-]+", body)
+    }
+    if not named:
+        return Check(
+            NOT_FOUND,
+            "amendment_acknowledgement",
+            "The response does not acknowledge any amendment by name. This is the most common "
+            "reason a compliant proposal is rejected — check the acknowledgement block on the "
+            "cover form before submission.",
+            expected="an acknowledgement of every amendment issued",
+        )
+    return Check(
+        UNVERIFIABLE,
+        "amendment_acknowledgement",
+        f"The response names {len(named)} amendment(s): {', '.join(sorted(named)[:4])}. Whether "
+        "every issued amendment is acknowledged, and whether the block is signed, has to be "
+        "checked against the solicitation's own list.",
+        expected="an acknowledgement of every amendment issued",
+        actual=", ".join(sorted(named)[:6]),
+    )
+
+
+def _check_due_time(text: str, _response: Corpus, _files: list[str]) -> Check | None:
+    """A closing time, as distinct from a closing date.
+
+    "2:00 PM Eastern" is a rule, and proposals are late by minutes. Nothing in
+    a document can show whether a submission happened, so this names the
+    constraint rather than pretending to check it.
+    """
+    if not re.search(r"(?ix)\b(?:due|closing|no\s+later\s+than|not\s+later\s+than|receipt)\b", text):
+        return None
+    match = _DUE_TIME.search(text)
+    if not match:
+        return None
+    zone = " ".join((match.group("zone") or "").split())
+    when = " ".join(match.group("time").split()) + (f" {zone}" if zone else "")
+    return Check(
+        UNVERIFIABLE,
+        "due_time",
+        f"Closes at {when}."
+        + (
+            ""
+            if zone
+            else " No time zone is stated in this clause — confirm it, because an hour either "
+            "way is the difference between on time and late."
+        ),
+        expected=f"submitted by {when}",
+    )
+
+
+def _check_pagination(text: str, _response: Corpus, _files: list[str]) -> Check | None:
+    if not _PAGINATION.search(text):
+        return None
+    return Check(
+        UNVERIFIABLE,
+        "pagination",
+        f"Requires {' '.join(_PAGINATION.search(text).group(0).split())}. {_RENDERING_ONLY}",
+        expected=" ".join(_PAGINATION.search(text).group(0).split()),
+    )
+
+
+def _check_tab_structure(text: str, response: Corpus, _files: list[str]) -> Check | None:
+    """Named tabs or sections a volume has to contain.
+
+    Checked by presence, which is as far as extracted text goes: whether the
+    tab divider is physically there is a white-glove question.
+    """
+    if not _STRUCTURAL.search(text):
+        return None
+    labels = {match.group("label") for match in _TAB_LABEL.finditer(text)}
+    if len(labels) < 2:
+        return None
+    body = normalize(_response_text(response))
+    missing = sorted(
+        label for label in labels
+        if not re.search(rf"(?i)\b(?:tab|section|part)\s+{re.escape(label.lower())}\b", body)
+    )
+    return Check(
+        SATISFIED if not missing else FAILED,
+        "tab_structure",
+        (
+            f"All {len(labels)} required sections appear in the response."
+            if not missing
+            else f"No heading found for {', '.join(missing)}."
+        ),
+        expected=f"sections {', '.join(sorted(labels))}",
+        actual=f"missing {', '.join(missing)}" if missing else "all present",
+    )
+
+
+def _check_language(text: str, _response: Corpus, _files: list[str]) -> Check | None:
+    match = _LANGUAGE.search(text)
+    if not match:
+        return None
+    return Check(
+        UNVERIFIABLE,
+        "language_units",
+        f"Requires {' '.join(match.group(0).split())}. Extracted text cannot establish this "
+        "across a whole response — check it where the requirement applies.",
+        expected=" ".join(match.group(0).split()),
+    )
+
+
 #: Order matters only for which rule names a combined verdict when several
 #: share the worst status. Counting rules come first because they say the most.
 _RULES = (
     _check_page_limit,
     _check_word_limit,
     _check_volume,
+    _check_tab_structure,
+    _check_amendment_acknowledgement,
     _check_form,
     _check_file_format,
     _check_naming,
@@ -598,6 +757,9 @@ _RULES = (
     _check_copies,
     _check_binding,
     _check_portal,
+    _check_due_time,
+    _check_pagination,
+    _check_language,
 )
 
 

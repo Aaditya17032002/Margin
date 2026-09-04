@@ -280,6 +280,77 @@
       ],
       "expected": "satisfied",
       "rule": "file_name"
+    },
+    {
+      "id": "amendment-not-acknowledged",
+      "why": "The single most common reason an otherwise compliant proposal is thrown out: the amendment was read, the response was updated, and nobody signed the acknowledgement block.",
+      "requirement": "Offerors shall acknowledge all amendments in Block 14 of the Standard Form 33.",
+      "pageTexts": [
+        "Volume I \u2014 Technical Approach. Our approach follows."
+      ],
+      "expected": "not_found",
+      "rule": "amendment_acknowledgement"
+    },
+    {
+      "id": "amendment-named-but-not-verifiable",
+      "why": "Naming an amendment is not signing the block, and the solicitation's own list of issued amendments is not in the response.",
+      "requirement": "Offerors shall acknowledge all amendments.",
+      "pageTexts": [
+        "Acknowledgements. Amendment 0001 and Amendment 0002 are acknowledged."
+      ],
+      "expected": "unverifiable",
+      "rule": "amendment_acknowledgement"
+    },
+    {
+      "id": "due-time-without-a-zone",
+      "why": "An hour either way is the difference between on time and late, and a clause stating a time with no zone is a real trap.",
+      "requirement": "Proposals shall be received no later than 14:00 on June 1, 2026.",
+      "pages": 2,
+      "expected": "unverifiable",
+      "rule": "due_time"
+    },
+    {
+      "id": "tab-structure-incomplete",
+      "requirement": "Volume I shall contain Tab A, Tab B and Tab C in that order.",
+      "pageTexts": [
+        "Volume I \u2014 Technical",
+        "Tab A \u2014 Approach"
+      ],
+      "expected": "failed",
+      "rule": "tab_structure"
+    },
+    {
+      "id": "tab-structure-complete",
+      "requirement": "Volume I shall contain Tab A and Tab B.",
+      "pageTexts": [
+        "Volume I \u2014 Technical",
+        "Tab A \u2014 Approach",
+        "Tab B \u2014 Experience"
+      ],
+      "expected": "satisfied",
+      "rule": "tab_structure"
+    },
+    {
+      "id": "contain-in-a-sentence-about-cost-is-not-a-tab-rule",
+      "why": "The structural verb has to be about structure. `shall contain costs` is not a document layout requirement.",
+      "requirement": "The Contractor shall contain costs within the ceiling stated in Section B.",
+      "pages": 2,
+      "expected": null,
+      "rule": null
+    },
+    {
+      "id": "pagination",
+      "requirement": "Pages shall be numbered consecutively with a footer on each page.",
+      "pages": 2,
+      "expected": "unverifiable",
+      "rule": "pagination"
+    },
+    {
+      "id": "language",
+      "requirement": "All submissions shall be written in English.",
+      "pages": 2,
+      "expected": "unverifiable",
+      "rule": "language_units"
     }
   ]
 }

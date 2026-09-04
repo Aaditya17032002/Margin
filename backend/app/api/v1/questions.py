@@ -21,6 +21,8 @@ from app.core.logging import get_logger
 from app.db.models.question import Question
 from app.db.models.requirement import Requirement
 from app.db.models.response_check import ResponseCheck
+from app.db.models.review import ReviewFinding
+from app.pipeline import propagation
 from app.schemas.resources import (
     QuestionAnswer,
     QuestionCreate,
@@ -275,43 +277,65 @@ async def _reopen(
     detail: str,
     replacement: Requirement | None = None,
 ) -> list[str]:
-    """Undo the settled verdicts on a requirement an answer has moved.
+    """Undo the settled work an answer has moved — and only that.
 
-    Only verdicts that said the requirement *was* answered. Reopening something
-    that was already a gap is noise, and noise in a change log is how people
-    stop reading it.
+    Walked through the dependency graph rather than done by hand here, so a
+    clarification also reaches the review findings resolved against the old
+    wording and the questions asked about it, and reaches nothing else. The
+    two easy alternatives are both wrong: reopening everything makes the
+    worklist unreadable, and reopening nothing is how a response ships
+    answering a clause that was withdrawn three weeks ago.
     """
-    checks = (
-        await db.execute(select(ResponseCheck).where(ResponseCheck.requirement_id == requirement.id))
-    ).scalars().all()
+    analysis_id = requirement.analysis_id
+    checks = list(
+        (
+            await db.execute(
+                select(ResponseCheck).where(ResponseCheck.analysis_id == analysis_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if replacement is not None:
+        # The verdict belongs to the requirement that now stands, so the work
+        # follows the clause rather than being stranded on a superseded row
+        # nobody looks at.
+        for check in checks:
+            if check.requirement_id == requirement.id:
+                check.requirement_id = replacement.id
 
-    reopened: list[str] = []
-    for check in checks:
-        if check.status != "satisfied":
-            continue
-        check.status = "unverifiable"
-        check.decided_by = "rule"
-        check.needs_confirmation = False
-        check.confirmed_by = None
-        check.confirmed_at = None
-        check.detail = detail
-        check.gap = "Re-read the answer against what the response says."
-        check.risk = "high" if requirement.stakes == "disqualifying" else "medium"
-        if replacement is not None:
-            # The verdict belongs to the requirement that now stands, so the
-            # work follows the clause rather than being stranded on a
-            # superseded row nobody looks at.
-            check.requirement_id = replacement.id
-        check.history = [
-            *(check.history or []),
-            _event(
-                now,
-                "reopened",
-                f"Reopened by an agency answer ({body.source or 'Q&A'}, {body.effect}).",
-            ),
-        ]
-        reopened.append(requirement.reference)
-    return reopened
+    requirements = list(
+        (
+            await db.execute(
+                select(Requirement).where(Requirement.analysis_id == analysis_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    findings = list(
+        (
+            await db.execute(
+                select(ReviewFinding).where(ReviewFinding.analysis_id == analysis_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    questions = list(
+        (await db.execute(select(Question).where(Question.analysis_id == analysis_id)))
+        .scalars()
+        .all()
+    )
+
+    graph = propagation.build_graph(
+        requirements=requirements, checks=checks, questions=questions, findings=findings
+    )
+    origins = [requirement.id] + ([replacement.id] if replacement is not None else [])
+    impacts = propagation.propagate(
+        graph, origins, cause=f"an agency answer ({body.source or 'Q&A'})", detail=detail, at=now
+    )
+    return [impact.reference for impact in impacts if impact.reopened]
 
 
 async def _supersede(
