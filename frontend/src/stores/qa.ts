@@ -20,6 +20,22 @@ interface QAState extends RemoteSlice {
   toggleImpact: (id: string) => void;
   reorder: (analysisId: string, orderedIds: string[]) => void;
   markSent: (analysisId: string, ids?: string[]) => void;
+  /**
+   * Record what the agency said back.
+   *
+   * Returns the requirements whose answers this reopened — a section written
+   * before a clarification is not an answer to the clarified clause, and the
+   * caller has to be able to say so.
+   */
+  recordAnswer: (
+    id: string,
+    input: {
+      answer: string;
+      source: string;
+      effect: "clarified" | "amended" | "withdrawn";
+      revisedRequirement?: string;
+    },
+  ) => Promise<{ reopened: string[]; superseded: string | null; withdrawn: string | null }>;
   clear: () => void;
 }
 
@@ -132,6 +148,29 @@ export const useQAStore = create<QAState>()(
         });
       });
       fireAndForget(questionsApi.reorder(analysisId, orderedIds));
+    },
+
+    recordAnswer: async (id, input) => {
+      const empty = { reopened: [], superseded: null, withdrawn: null };
+      const target = get().questions.find((q) => q.id === id);
+      if (!target) return empty;
+      try {
+        const updated = await questionsApi.answer(target.analysisId, id, input);
+        set((s) => {
+          const local = s.questions.find((q) => q.id === id);
+          if (local) Object.assign(local, updated);
+        });
+        return {
+          reopened: updated.reopened ?? [],
+          superseded: updated.superseded ?? null,
+          withdrawn: updated.withdrawn ?? null,
+        };
+      } catch (error) {
+        set((s) => {
+          s.error = errorMessage(error, "The answer could not be recorded.");
+        });
+        return empty;
+      }
     },
 
     markSent: (analysisId, ids) => {

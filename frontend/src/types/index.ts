@@ -159,6 +159,13 @@ export interface ResearchSource {
  * What the open web said, which is never the same kind of thing as what the
  * document says. It has no page, no clause, and no citation — only sources.
  */
+/** One paragraph of the research report and the pages that back it. */
+export interface ResearchClaim {
+  text: string;
+  /** URLs into `ExternalResearch.sources`. Empty means nothing was cited. */
+  sources: string[];
+}
+
 export interface ExternalResearch {
   status:
     | "not_requested"
@@ -171,7 +178,23 @@ export interface ExternalResearch {
   query: string;
   summary: string;
   sources: ResearchSource[];
+  /** The report split into paragraphs, each carrying its own attribution. */
+  claims?: ResearchClaim[];
   at?: string | null;
+}
+
+/** One row in the source browser, whatever the provider calls it underneath. */
+export interface RemoteEntry {
+  /** Opaque token: hand it back to browse into this entry, or to import it. */
+  id: string;
+  name: string;
+  kind: "site" | "drive" | "folder" | "message" | "file";
+  size: number;
+  modified: string;
+  /** Second line — who sent the mail, who last touched the file, the site URL. */
+  subtitle: string;
+  /** True when Margin can read it. Everything else is a container you open. */
+  importable: boolean;
 }
 
 export interface Clin {
@@ -210,6 +233,71 @@ export interface ActivityEntry {
   action: string;
   target?: string;
   analysisId?: string;
+}
+
+/**
+ * What was read, and what was not.
+ *
+ * Two numbers rather than one. `pagesScanned` is everything the deterministic
+ * sweep visited; `pagesAnalysed` is the narrower set a specialist actually
+ * reasoned over. A single "100% analysed" figure would be a claim the product
+ * cannot support, so the shape keeps them apart.
+ */
+export interface CoverageTotals {
+  documents: number;
+  emptyDocuments: number;
+  pages: number;
+  pagesScanned: number;
+  pagesAnalysed: number;
+  chunks: number;
+  chunksAnalysed: number;
+  chunksScanned: number;
+  chunksUnreached: number;
+}
+
+export type CoverageState = "analysed" | "scanned" | "no_text" | "unreached";
+
+export interface CoverageDocument {
+  documentId: string;
+  name: string;
+  kind: "base" | "attachment" | "amendment" | "response" | string;
+  pages: number;
+  /** The document's worst case, not its average. */
+  state: CoverageState;
+  pagesAnalysed: number;
+  chunks: number;
+  chunksAnalysed: number;
+  chunksUnreached: number;
+  /** Contiguous page runs no pass reached, as [start, end] pairs. */
+  unreachedPages: [number, number][];
+  note?: string;
+}
+
+export interface Coverage {
+  at?: string | null;
+  totals: CoverageTotals;
+  documents: CoverageDocument[];
+  /** Specialist id → how many passages it had in context. */
+  byAgent: Record<string, number>;
+  /** Every passage reached and every document readable. */
+  complete: boolean;
+}
+
+/**
+ * What the last run changed in the Requirement Ledger.
+ *
+ * `removedWithWork` is the field that matters: requirements somebody had
+ * already assigned or drafted against, that the newest read of the package no
+ * longer finds. That is a question for a person, not a number on a dashboard.
+ */
+export interface LedgerDelta {
+  added: number;
+  updated: number;
+  unchanged: number;
+  removed: number;
+  removedWithWork: string[];
+  /** Answers written against wording an amendment has since replaced. */
+  invalidated?: string[];
 }
 
 export interface Analysis {
@@ -254,22 +342,554 @@ export interface Analysis {
   amendments: AmendmentRecord[];
   pages: DocumentPage[];
   versions: { id: string; label: string; at: string; author: string; note: string }[];
+  /** The reading ledger for the last run. Absent on an analysis that has not run. */
+  coverage?: Coverage;
+  /** What the last run added to, changed in, or stopped finding in the ledger. */
+  ledger?: LedgerDelta;
+  /** The draft response bound to this solicitation, if one has been. */
+  response?: ResponseBinding;
+  /** How many requirement pairs the last run found that cannot both be met. */
+  contradictions?: { found: number; added: number; closed: number };
   /** Only a deep-research pass fills this in; other modes leave it empty. */
   research?: ExternalResearch;
 }
 
+/** How a requirement can be checked. */
+export type Verification = "mechanical" | "substantive";
+
+/** Where a requirement stands in the ledger. Nothing is ever deleted. */
+export type RequirementState = "open" | "superseded" | "removed";
+
+/**
+ * One requirement, shown as a matrix row.
+ *
+ * The matrix is a projection of the Requirement Ledger, not a separate list.
+ * `key` is the requirement's identity — derived from its own words — which is
+ * what lets an owner and a status survive a re-read of the package.
+ */
 export interface MatrixRow {
   id: string;
   analysisId: string;
+  /** Stable across runs and re-parses. */
+  key?: string;
   reference: string;
   requirement: string;
   type: RequirementType;
   stakes: Stakes;
+  /** The extraction category: obligation, instruction, limit, form, certification, volume. */
+  kind?: string;
+  /** `mechanical` rules are counted, never judged by a model. */
+  verification?: Verification;
+  state?: RequirementState;
+  /** Which passes found it: sweep, model, manual. */
+  sources?: string[];
   owner: string | null;
   responseLocation: string;
   status: MatrixStatus;
   citation: Citation;
   note?: string;
+  /** Who cleared it. A mandatory requirement is never satisfied without a name. */
+  confirmedBy?: string | null;
+  confirmedAt?: string | null;
+  /** The team's internal date for answering this, not the solicitation's. */
+  dueAt?: string | null;
+  history?: { at: string; event: string; detail: string }[];
+}
+
+/** How a response check came out. */
+export type CheckStatus = "satisfied" | "partial" | "failed" | "not_found" | "unverifiable";
+
+/** What kind of thing made the claim. */
+export type DecidedBy = "rule" | "model" | "human";
+
+/**
+ * One row of the trace: a solicitation clause, and what the response does
+ * about it.
+ *
+ * `decidedBy` is the field that keeps the row honest. A page count that was
+ * counted and a model's reading of a narrative section are not the same kind
+ * of claim, and a view that shows them identically invites a reader to trust
+ * them equally.
+ */
+export interface ResponseCheck {
+  id: string;
+  analysisId: string;
+  requirementId: string;
+  responseVersion: number;
+
+  /* The solicitation half. */
+  reference: string;
+  requirement: string;
+  stakes: Stakes;
+  citation: Citation;
+
+  /* The response half. */
+  status: CheckStatus;
+  verification: Verification;
+  decidedBy: DecidedBy;
+  /** Which mechanical rule fired, when one did. */
+  rule: string;
+  detail: string;
+  /** What is missing, in a sentence. Empty when nothing is. */
+  gap: string;
+  risk: "low" | "medium" | "high";
+  owner: string | null;
+  /** Where in the response it was answered. `located: false` means the quote could not be found. */
+  evidence: {
+    documentId?: string;
+    documentName?: string;
+    page?: number;
+    section?: string;
+    quote?: string;
+    located?: boolean;
+  };
+  /** A mandatory requirement is never cleared without a person's name on it. */
+  needsConfirmation: boolean;
+  confirmedBy?: string | null;
+  confirmedAt?: string | null;
+  note?: string | null;
+  history?: { at: string; event: string; detail: string }[];
+  /** The chain, frozen when the check was written. */
+  lineage?: {
+    state?: "unchanged" | "changed" | "lost" | "new";
+    detail?: string;
+    previousCheckId?: string | null;
+    trace?: Record<string, unknown>;
+  };
+  supersedesId?: string | null;
+  /**
+   * A verdict carried from the previous draft because the passage did not
+   * change. Shown, because a signature on a page nobody re-read is worth being
+   * able to see.
+   */
+  carriedVerdict?: boolean;
+}
+
+/**
+ * How somebody satisfied themselves.
+ *
+ * "Satisfied" with no basis is a name against an outcome; "counted 38 pages in
+ * the rendered PDF" is evidence, and only the second is worth anything in a
+ * debrief.
+ */
+export type VerificationBasis =
+  | "read_the_document"
+  | "counted_in_the_file"
+  | "checked_with_the_agency"
+  | "team_knowledge"
+  | "prior_bid"
+  | "not_stated";
+
+/** The draft response bound to a solicitation, and the last check of it. */
+export interface ResponseBinding {
+  documentId?: string;
+  fileName?: string;
+  label?: string;
+  version?: number;
+  boundAt?: string;
+  at?: string | null;
+  summary?: {
+    total: number;
+    counts: Partial<Record<CheckStatus, number>>;
+    /** Satisfied *and* signed off. Deliberately smaller than the satisfied count. */
+    cleared: number;
+    awaitingConfirmation: number;
+    blocking: number;
+    blockingReferences: string[];
+  };
+}
+
+/**
+ * One thing in an analysis that a machine could not settle.
+ *
+ * Margin produces several kinds of doubt and they used to live wherever they
+ * were produced — an unlocated citation on a findings tab, an unreached page in
+ * the coverage ledger, an unsigned mandatory requirement in the response trace.
+ * A capture manager with four days left does not tour six tabs looking for
+ * them, so they are collected into one list ordered by what it costs to be
+ * wrong.
+ */
+export interface VerificationItem {
+  id: string;
+  kind: "coverage" | "ledger" | "amendment" | "gate" | "citation" | "requirement" | "response";
+  severity: "blocking" | "important" | "routine";
+  title: string;
+  /** Why a rule or a model could not settle it. */
+  why: string;
+  /** What happens if nobody does anything. */
+  consequence: string;
+  /** Which workspace tab settles it. */
+  tab: string;
+  reference: string;
+  citation?: Citation | null;
+  owner?: string | null;
+  detail: string;
+}
+
+export interface VerificationQueue {
+  summary: { total: number; blocking: number; important: number; routine: number };
+  items: VerificationItem[];
+}
+
+/**
+ * A question is not finished when it is sent.
+ *
+ * The answer is the point, and an answer that never reaches the requirement it
+ * was about has changed nothing — which is why a question can name the clause
+ * it concerns.
+ */
+export type QuestionStatus = "draft" | "submitted" | "answered" | "withdrawn";
+
+/**
+ * Where the machine and the people using it disagree.
+ *
+ * Every confirmation and correction is a labelled example produced by somebody
+ * holding the document. Grouped by the things a fix can be aimed at, because a
+ * single accuracy figure says the product is 87% right and gives nobody
+ * anywhere to start.
+ */
+export interface DisagreementBucket {
+  name: string;
+  total: number;
+  corrected: number;
+  flagged: number;
+  correctionRate: number;
+}
+
+export interface VerdictRecord {
+  id: string;
+  at: string | null;
+  analysisId: string;
+  outcome: "confirmed" | "corrected" | "flagged";
+  reference: string;
+  requirement: string;
+  machineStatus: string;
+  machineDecidedBy: string;
+  machineRule: string;
+  humanStatus: string;
+  note: string | null;
+  stakes: Stakes;
+  actor: string;
+}
+
+export interface VerificationCorpus {
+  total: number;
+  confirmed: number;
+  corrected: number;
+  flagged: number;
+  correctionRate: number;
+  /** Corrections out of `satisfied` — the ones that would have gone out. */
+  wouldHaveShipped: number;
+  byRule: DisagreementBucket[];
+  byDecider: DisagreementBucket[];
+  byVerification: DisagreementBucket[];
+  byStakes: DisagreementBucket[];
+  transitions: { from: string; to: string; count: number }[];
+  recent: VerdictRecord[];
+}
+
+/**
+ * The rounds a capture team runs before a proposal is sent.
+ *
+ * A round is opened against a *version* of the response — a Red Team on draft
+ * 2 says nothing about draft 4 — and it ends with a named person saying the
+ * bid can proceed.
+ */
+export type ReviewColour = "pink" | "red" | "gold" | "white_glove";
+export type ReviewVerdict = "proceed" | "proceed_with_fixes" | "do_not_proceed";
+export type FindingSeverity = "must_fix" | "should_fix" | "consider";
+export type FindingState = "open" | "fixed" | "accepted" | "rejected";
+
+export interface ReviewFinding {
+  id: string;
+  roundId: string;
+  analysisId: string;
+  requirementId?: string | null;
+  severity: FindingSeverity;
+  text: string;
+  location: string;
+  state: FindingState;
+  /** Required to reject: a finding closed without one gets raised again. */
+  resolution?: string | null;
+  raisedBy: string;
+  raisedAt?: string | null;
+  resolvedBy?: string | null;
+  resolvedAt?: string | null;
+}
+
+export interface ReviewRound {
+  id: string;
+  analysisId: string;
+  colour: ReviewColour;
+  responseVersion: number;
+  charter: string;
+  reviewers: string[];
+  status: "open" | "closed";
+  verdict?: ReviewVerdict | null;
+  note?: string | null;
+  /** Set when the round was closed over its own unresolved must-fix findings. */
+  overrideReason?: string | null;
+  openedBy: string;
+  openedAt?: string | null;
+  closedBy?: string | null;
+  closedAt?: string | null;
+  findings: ReviewFinding[];
+  openMustFix: number;
+  history?: { at: string; event: string; detail: string }[];
+}
+
+/** What a white-glove round has to verify by hand, because extracted text cannot. */
+export interface WhiteGloveItem {
+  checkId: string;
+  requirementId: string;
+  reference: string;
+  requirement: string;
+  rule: string;
+  whyNotChecked: string;
+  stakes: Stakes;
+}
+
+/**
+ * Two requirements in the same package that cannot both be met.
+ *
+ * The one kind of problem where the product read the document correctly and
+ * the document is the problem. Nothing downstream can settle it: the matrix
+ * shows both clauses as live work, and a response check judges the answer
+ * against whichever one it was handed.
+ */
+export interface ContradictionSide {
+  requirementId: string;
+  reference: string;
+  text: string;
+  stakes: Stakes;
+  state: string;
+  citation: Citation;
+  value: string;
+}
+
+export interface Contradiction {
+  id: string;
+  analysisId: string;
+  key: string;
+  /** page_limit, deadline, font_size, permission, and so on. */
+  dimension: string;
+  summary: string;
+  severity: "blocking" | "important";
+  state: "open" | "resolved" | "disputed" | "dismissed";
+  left: ContradictionSide;
+  right: ContradictionSide;
+  /** Which one probably governs. A recommendation the product never acts on. */
+  recommendedId: string;
+  rationale: string;
+  governsId?: string | null;
+  resolution?: string | null;
+  resolvedBy?: string | null;
+  resolvedAt?: string | null;
+  questionId?: string | null;
+  history?: { at: string; event: string; detail: string }[];
+}
+
+/**
+ * An evaluation factor, and what the response does about the requirements
+ * under it.
+ *
+ * `exposure` is the ordering that matters: weight share × weakness, so the top
+ * of the list is where the most points are least defended. It is not a
+ * predicted score — nothing here knows how an evaluator reads, and a number
+ * that looked like a score would be believed.
+ */
+export interface FactorRequirement {
+  id: string;
+  reference: string;
+  text: string;
+  stakes: Stakes;
+  owner: string | null;
+  status: CheckStatus | "unchecked";
+  /** Why this requirement was mapped to this factor. */
+  matchedBy: string;
+}
+
+export interface FactorCoverage {
+  factorId: string;
+  name: string;
+  weight: number;
+  /** Share of the total stated weight. Zero when the factor carries none. */
+  share: number;
+  method: string;
+  citation: Citation;
+  requirementIds: string[];
+  requirements: number;
+  counts: Record<string, number>;
+  weakness: number;
+  exposure: number;
+  /** Mandatory requirements under this factor the response does not answer. */
+  blocking: string[];
+  requirementDetail: FactorRequirement[];
+}
+
+export interface WeightingLens {
+  summary: {
+    factors: number;
+    weighted: number;
+    unweighted: number;
+    unmapped: string[];
+    weightAtRisk: number;
+    mostExposed: { name: string; share: number; weakness: number }[];
+    blocking: string[];
+  };
+  /** Weakness means nothing without a response to measure it against. */
+  responseBound: boolean;
+  factors: FactorCoverage[];
+}
+
+/**
+ * A contract the organisation has delivered, and how relevant it is here.
+ *
+ * Every signal is reported separately. "This one matches" is an assertion;
+ * "same agency, same NAICS, ended eight months ago" is a case somebody can
+ * make in a proposal.
+ */
+export interface PastPerformanceRecord {
+  id: string;
+  title: string;
+  customer: string;
+  agency: string;
+  contractNumber: string;
+  scope: string;
+  value: number;
+  startedAt: string | null;
+  endedAt: string | null;
+  ongoing: boolean;
+  naics: string;
+  capabilities: string[];
+  placeOfPerformance: string;
+  reference: {
+    name: string;
+    title: string;
+    email: string;
+    phone: string;
+    /** A reference who has moved on fails at the worst possible time. */
+    checkedAt: string | null;
+  };
+  rating: string;
+  notes: string;
+}
+
+export interface PastPerformanceMatch {
+  recordId: string;
+  title: string;
+  score: number;
+  signals: Record<string, { score: number; detail?: string; shared?: string[] }>;
+  /** Reasons to think twice before putting this one forward. */
+  concerns: string[];
+  record: PastPerformanceRecord;
+}
+
+/**
+ * A passage that answered a requirement on a previous bid.
+ *
+ * Never offered as text alone: the provenance and the cautions are what make
+ * it a library rather than a pile of paragraphs.
+ */
+export interface ContentSuggestion {
+  blockId: string;
+  title: string;
+  text: string;
+  score: number;
+  /** Where it came from, what happened to that bid, and who verified it. */
+  provenance: string;
+  /** Reasons to read it before using it. */
+  cautions: string[];
+  outcome: "won" | "lost" | "no_award" | "withdrawn" | "unknown";
+  verifiedBy: string | null;
+  timesUsed: number;
+}
+
+/**
+ * What can still stop this response going out, in the order it will.
+ *
+ * A deadline list says the proposal is due in nine days. This says which of
+ * the forty open things can still be finished and which one is already too
+ * late — and the difference between those is a decision rather than a task.
+ */
+export interface PathStep {
+  kind: "submission" | "production" | "review";
+  label: string;
+  due: string | null;
+  state: "clear" | "at risk" | "past the point";
+  detail: string;
+}
+
+export interface PathItem {
+  requirementId: string;
+  reference: string;
+  text: string;
+  stakes: Stakes;
+  owner: string | null;
+  status: MatrixStatus;
+  /** The latest date drafting can start and still clear every gate. */
+  latestStart: string | null;
+  daysLeft: number | null;
+  state: "clear" | "at risk" | "past the point";
+  reason: string;
+  blocking: boolean;
+}
+
+export interface CriticalPath {
+  submission: string | null;
+  steps: PathStep[];
+  items: PathItem[];
+  notes: string[];
+  summary: {
+    total: number;
+    pastThePoint: number;
+    atRisk: number;
+    clear: number;
+    /** Mandatory requirements whose start date has already gone. */
+    blockingPastThePoint: number;
+  };
+}
+
+/**
+ * What was known when the bid decision was made.
+ *
+ * Margin does not decide — whether the company wants this customer is not in
+ * the document. What it does is make the decision accountable.
+ */
+export interface Consideration {
+  kind: string;
+  weight: "against" | "for" | "unknown";
+  summary: string;
+  detail: string;
+}
+
+export interface DecisionEvidence {
+  at: string;
+  facts: Record<string, number>;
+  considerations: Consideration[];
+  against: number;
+  unknown: number;
+  readiness: {
+    against: number;
+    unknown: number;
+    settled: boolean;
+    headline: string;
+  };
+}
+
+export interface DecisionRecord {
+  id: string;
+  analysisId: string;
+  decision: GoNoGo;
+  rationale: string;
+  decidedBy: string;
+  decidedAt: string | null;
+  participants: string[];
+  evidence: DecisionEvidence;
+  acknowledged: string[];
+  supersedesId: string | null;
+  outcome: "pending" | "won" | "lost" | "no_award" | "not_submitted";
+  outcomeNote: string | null;
 }
 
 export interface QAQuestion {
@@ -280,8 +900,46 @@ export interface QAQuestion {
   sourceKind: "silent" | "contradiction" | "ambiguity" | "manual";
   goNoGoImpact: boolean;
   order: number;
+  /** Kept in step with `status`; the lifecycle is the truth. */
   sent: boolean;
   citation?: Citation;
+
+  status?: QuestionStatus;
+  submittedAt?: string | null;
+  answeredAt?: string | null;
+  /** What the agency said, verbatim — never a paraphrase. */
+  answer?: string | null;
+  answerSource?: string;
+  /** The requirement this question is about, when it is about one. */
+  requirementId?: string | null;
+  history?: { at: string; event: string; detail: string }[];
+}
+
+/** One person's outstanding work, across every live pursuit. */
+export interface WorkItem {
+  requirementId: string;
+  analysisId: string;
+  analysisTitle: string;
+  solicitationNumber: string;
+  reference: string;
+  requirement: string;
+  stakes: Stakes;
+  verification: Verification;
+  owner: string | null;
+  status: MatrixStatus;
+  dueAt: string | null;
+  overdue: boolean;
+  responseLocation: string;
+}
+
+/** One thing that happened to an analysis, and who did it. */
+export interface AuditEntry {
+  at: string;
+  scope: "run" | "amendment" | "requirement" | "response" | "question";
+  subject: string;
+  event: string;
+  detail: string;
+  actor: string;
 }
 
 export interface AppNotification {
@@ -358,7 +1016,7 @@ export interface ExportRecord {
   analysisId: string;
   analysisTitle: string;
   templateName: string;
-  format: "DOCX" | "PDF";
+  format: "DOCX" | "PDF" | "MD";
   size: number;
   destination: "download" | "onedrive" | "outlook";
   status: "ready" | "generating" | "failed";
@@ -402,4 +1060,155 @@ export interface Org {
   seatsUsed: number;
   duns: string;
   cage: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reading the review rounds against each other                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One round is a list of findings. Three rounds are an argument about whether
+ * the proposal is getting better, and nothing in a per-round view answers it.
+ */
+export interface RoundReport {
+  roundId: string;
+  colour: ReviewColour;
+  responseVersion: number;
+  status: "open" | "closed";
+  verdict?: ReviewVerdict | null;
+  openedAt: string;
+  closedAt?: string | null;
+  reviewers: string[];
+  counts: {
+    total: number;
+    bySeverity: Record<FindingSeverity, number>;
+    byState: Record<FindingState, number>;
+    /** Fixed versus accepted is the distinction the report turns on. */
+    mustFixFixed: number;
+    mustFixAccepted: number;
+  };
+  openMustFix: number;
+  overridden: boolean;
+  overrideReason?: string | null;
+  /** A newer draft exists than the one this round read. */
+  stale: boolean;
+  note: string;
+}
+
+export interface RecurringFinding {
+  requirementId: string;
+  firstRoundId: string;
+  firstColour: ReviewColour;
+  firstText: string;
+  againRoundId: string;
+  againColour: ReviewColour;
+  againText: string;
+  severity: FindingSeverity;
+  why: string;
+}
+
+export interface CarriedFinding {
+  findingId: string;
+  roundId: string;
+  colour: ReviewColour;
+  text: string;
+  location: string;
+  requirementId?: string | null;
+  why: string;
+}
+
+export interface ReviewComparison {
+  rounds: RoundReport[];
+  /** Raised, marked fixed, and raised again. The fix did not hold. */
+  recurring: RecurringFinding[];
+  /** Must-fix findings a closed round left open, where nobody looks. */
+  carried: CarriedFinding[];
+  reviewers: { reviewer: string; rounds: number; raised: number }[];
+  trend: {
+    direction: "improving" | "worsening" | "flat" | "single" | "unknown";
+    detail: string;
+    roundsClosed?: number;
+    worstVerdict?: ReviewVerdict | null;
+    overrides?: number;
+    stale?: number;
+  };
+  currentVersion: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Governance: permissions, retention, personal data                    */
+/* ------------------------------------------------------------------ */
+
+export type WorkspaceRole = "admin" | "reviewer" | "writer" | "viewer";
+
+export interface PermissionModel {
+  roles: { name: WorkspaceRole; purpose: string; permissions: string[] }[];
+  permissions: { name: string; describes: string; roles: WorkspaceRole[] }[];
+  separationOfDuties: { action: string; rule: string; why: string }[];
+  you: {
+    id: string;
+    role: WorkspaceRole;
+    purpose: string;
+    can: string[];
+    cannot: string[];
+  };
+}
+
+export interface RetentionPolicy {
+  enabled: boolean;
+  source_documents_days: number;
+  extracted_text_days: number;
+  response_drafts_days: number;
+  minimum_hold_days: number;
+}
+
+export interface RetentionCandidate {
+  analysisId: string;
+  analysisTitle: string;
+  class: string;
+  label: string;
+  ageDays: number;
+  dueDays: number;
+  lastActivity: string;
+  detail: string;
+}
+
+export interface RetentionView {
+  enabled: boolean;
+  policy: RetentionPolicy;
+  due: RetentionCandidate[];
+  skipped: { analysisId: string; analysisTitle: string; reason: string }[];
+  counts: Record<string, number>;
+  /** Held whatever the policy says. A promise nobody can see is one nobody believes. */
+  neverDisposed: string[];
+  problems: string[];
+  classes: { name: string; label: string; note: string }[];
+  floorMinimumDays: number;
+  canEdit: boolean;
+}
+
+export interface PiiFinding {
+  kind: string;
+  label: string;
+  note: string;
+  start: number;
+  end: number;
+  /** Masked. Listing every SSN in order to warn about them would be absurd. */
+  preview: string;
+  context: string;
+}
+
+export interface PiiScan {
+  analysisId: string;
+  documents: {
+    documentId: string;
+    fileName: string;
+    kind: string;
+    total: number;
+    counts: Record<string, number>;
+    findings: PiiFinding[];
+  }[];
+  counts: Record<string, number>;
+  total: number;
+  kinds: { kind: string; label: string; note: string }[];
 }

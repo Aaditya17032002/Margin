@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import orjson
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.events import AgentEvent, EventType
@@ -17,11 +18,19 @@ from app.db.base import async_session_factory
 from app.db.models.activity import ActivityLog
 from app.db.models.analysis import Analysis
 from app.db.models.document import Document
-from app.db.models.matrix_row import MatrixRow
+from app.db.models.doc_chunk import DocChunk
 from app.db.models.notification import Notification
 from app.db.models.question import Question
+from app.db.models.requirement import Requirement
 from app.db.models.user import User
-from app.pipeline.ingest import full_pipeline_from_text
+from app.pipeline import amendments, contradictions
+from app.pipeline.anchor import CitationAnchor
+from app.pipeline.corpus import Corpus, build_corpus
+from app.pipeline.coverage import CoverageLedger, summarise as coverage_summary
+from app.pipeline.ingest import embed_chunks
+from app.pipeline.ledger import reconcile
+from app.pipeline.requirements import from_findings, from_sweep, merge
+from app.pipeline.sweep import sweep_chunks
 from app.providers.base import ChunkResult
 from app.workers import derive
 from app.workers.schedule import build_schedule
@@ -49,18 +58,33 @@ PLACEHOLDER_TEXT = (
 )
 
 
-async def _document_text(db: AsyncSession, analysis: Analysis) -> tuple[str, str]:
-    """The base document's extracted text, plus the filename to report."""
+async def _package(db: AsyncSession, analysis: Analysis) -> Corpus:
+    """Every document in the pursuit, not just the base one.
+
+    The previous version filtered to ``doc_kind == "base"``, so a package of a
+    base RFP and twelve attachments was read as one document and the other
+    twelve were stored and ignored.
+    """
     result = await db.execute(
         select(Document)
-        .where(Document.analysis_id == analysis.id, Document.doc_kind == "base")
-        .order_by(Document.version.desc())
+        .where(Document.analysis_id == analysis.id)
+        .order_by(Document.created_at.asc())
     )
-    document = result.scalars().first()
-    if document and document.raw_text:
-        return document.raw_text, document.file_name
-    filename = (document.file_name if document else analysis.file_name) or "document.pdf"
-    return PLACEHOLDER_TEXT, filename
+    documents = list(result.scalars().all())
+    corpus = build_corpus(documents)
+
+    if not corpus.chunks:
+        # Nothing readable anywhere. The run still happens — the reader is told
+        # plainly rather than shown an empty analysis with no explanation.
+        placeholder = SimpleNamespace(
+            id="",
+            file_name=(analysis.file_name or "document.pdf"),
+            doc_kind="base",
+            version=1,
+            raw_text=PLACEHOLDER_TEXT,
+        )
+        corpus = build_corpus([placeholder])
+    return corpus
 
 
 async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
@@ -80,20 +104,28 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
             analysis.stage = "analyzing"
             await db.commit()
 
-            # ── Step 1: the document itself ──────────────────────────────
-            raw_text, filename = await _document_text(db, analysis)
-            layout, _embeddings = await full_pipeline_from_text(raw_text, filename)
+            # ── Step 1: the whole package ────────────────────────────────
+            corpus = await _package(db, analysis)
+            embeddings = await embed_chunks(
+                [ChunkResult(text=c.text, page=c.page, section_path=c.section_path) for c in corpus.chunks]
+            )
+            await _persist_chunks(db, analysis, corpus, embeddings)
 
-            chunks = layout.chunks or [
-                ChunkResult(text=raw_text[:400], page=1, section_path="Section A")
-            ]
+            # ── Step 2: the deterministic sweep ──────────────────────────
+            # Before any model runs, and over every chunk. This is what makes
+            # coverage a fact rather than an estimate.
+            sweep_result = sweep_chunks(corpus.chunks)
+            ledger = CoverageLedger(corpus=corpus)
+            ledger.record_scanned(sweep_result.visited)
 
-            # ── Step 2: the agent roster ─────────────────────────────────
+            # ── Step 3: the agent roster ─────────────────────────────────
             orchestration = await run_orchestration(
                 analysis_id=analysis_id,
                 mode=analysis.mode,
-                chunks=chunks,
-                pages=layout.pages,
+                corpus=corpus,
+                embeddings=embeddings,
+                sweep=sweep_result,
+                ledger=ledger,
                 redis=redis,
             )
 
@@ -114,6 +146,15 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
             analysis.risks = derive.risk_items(findings.get("risks", []))
             # The calendar is built on every run, whatever the bid decision:
             # a team decides *because* they can see the dates.
+            # The ledger closes here: every pass that could record what it read
+            # has run by now.
+            coverage = ledger.build()
+            analysis.coverage = coverage
+
+            # Kept before the overwrite: a deadline that moved is the one
+            # amendment change that can cost the bid on its own, and it is only
+            # visible against what the previous read said.
+            previous_dates = list(analysis.dates or [])
             analysis.dates = build_schedule(orchestration.get("dates") or [])
             analysis.summary = derive.summary(analysis.title, findings, gate_list)
 
@@ -126,9 +167,16 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
             research_note = _research_note(research)
             if research_note:
                 analysis.summary = f"{analysis.summary} {research_note}"
-
-            analysis.page_count = layout.page_count
-            analysis.pages = layout.pages
+            # Coverage leads the summary: what was read is the precondition for
+            # trusting anything that follows it.
+            analysis.summary = f"{coverage_summary(coverage)} {analysis.summary}".strip()
+            analysis.page_count = corpus.page_count
+            analysis.pages = corpus.pages_for_anchor()
+            analysis.sweep = {
+                "at": coverage["at"],
+                "counts": sweep_result.by_kind(),
+                "total": len(sweep_result.hits),
+            }
             analysis.stage = "review"
             analysis.updated_at = datetime.now(UTC)
 
@@ -144,8 +192,44 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
                 },
             ]
 
+            # ── Step 4: the Requirement Ledger ──────────────────────────
+            # The compliance matrix is a projection of this, not a second list
+            # rebuilt from scratch each run. Requirements keep their identity —
+            # and therefore their owner, status and notes — across re-reads.
             if "compliance" in roster:
-                await _write_matrix_rows(db, analysis, derive.matrix_rows(analysis.legal))
+                anchor = CitationAnchor(analysis.pages)
+                drafts = merge(
+                    from_sweep(sweep_result.hits, anchor),
+                    from_findings(analysis.legal),
+                )
+                reconciliation = await reconcile(
+                    db,
+                    analysis_id=analysis.id,
+                    org_id=analysis.org_id,
+                    drafts=drafts,
+                    run_id=version_id,
+                    introduced_by=corpus.documents[0].id if corpus.documents else "",
+                )
+                analysis.ledger = reconciliation.as_dict()
+
+                # ── Step 5: requirements that cannot both be met ────────
+                # Section L says forty pages, an attachment says fifty, an
+                # amendment says sixty-five. Each is extracted correctly and
+                # nothing else in the pipeline notices that they disagree.
+                await _detect_contradictions(db, analysis, version_id)
+
+                # ── Step 6: what an amendment changed ───────────────────
+                # A reworded clause reaches the ledger as one removal and one
+                # addition. Pairing them back up is what turns that into the
+                # question a proposal manager actually has: which of our
+                # answers is now wrong?
+                await _amendment_impact(
+                    db,
+                    analysis,
+                    corpus=corpus,
+                    reconciliation=reconciliation,
+                    previous_dates=previous_dates,
+                )
             if "qa" in roster:
                 await _write_questions(db, analysis, derive.questions(orchestration.get("questions", [])))
 
@@ -174,33 +258,199 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
         return {"error": str(e)}
 
 
-async def _write_matrix_rows(db: AsyncSession, analysis: Analysis, rows: list[dict]) -> None:
-    """Replace the rows this pass owns. Rows a person added by hand are kept:
-    they carry an owner or a response location the agent never sets."""
-    existing = await db.execute(
-        select(MatrixRow).where(MatrixRow.analysis_id == analysis.id)
-    )
-    for row in existing.scalars().all():
-        if row.owner is None and not row.response_location and row.status == "unassigned":
-            await db.delete(row)
+async def _persist_chunks(
+    db: AsyncSession, analysis: Analysis, corpus: Corpus, embeddings: list[list[float]]
+) -> None:
+    """Store the corpus so later passes do not have to re-read the package.
 
-    for row in rows:
+    Embeddings were previously computed on every run and discarded — the
+    variable was assigned and never used, while `doc_chunks`, the pgvector
+    column and the retriever all sat written and uncalled.
+    """
+    await db.execute(delete(DocChunk).where(DocChunk.analysis_id == analysis.id))
+    for index, chunk in enumerate(corpus.chunks):
+        if not chunk.document_id:
+            continue  # the placeholder corpus has no document behind it
         db.add(
-            MatrixRow(
-                id=f"m_{uuid.uuid4().hex[:8]}",
+            DocChunk(
+                id=f"dc_{uuid.uuid4().hex[:12]}",
+                document_id=chunk.document_id,
                 analysis_id=analysis.id,
                 org_id=analysis.org_id,
-                reference=row["reference"][:255],
-                requirement=row["requirement"],
-                type=row["type"],
-                stakes=row["stakes"],
-                owner=None,
-                response_location="",
-                status="unassigned",
-                citation=row["citation"],
-                note=row["note"],
+                text=chunk.text,
+                page=chunk.page,
+                section_path=chunk.section_path[:500],
+                bbox=chunk.bbox,
+                chunk_index=chunk.chunk_index,
+                embedding=embeddings[index] if index < len(embeddings) else None,
             )
         )
+    await db.flush()
+    logger.info("chunks_persisted", analysis_id=analysis.id, chunks=len(corpus.chunks))
+
+
+async def _detect_contradictions(db: AsyncSession, analysis: Analysis, run_id: str) -> None:
+    rows = (
+        await db.execute(
+            select(Requirement).where(
+                Requirement.analysis_id == analysis.id, Requirement.state == "open"
+            )
+        )
+    ).scalars().all()
+    if not rows:
+        return
+
+    # The document a requirement came from decides which of two probably
+    # governs, so it travels with the candidate.
+    kinds = {
+        doc.id: doc.doc_kind
+        for doc in (await db.execute(select(Document).where(Document.analysis_id == analysis.id)))
+        .scalars()
+        .all()
+    }
+    candidates = [
+        contradictions.Candidate(
+            id=row.id,
+            reference=row.reference,
+            text=row.text,
+            kind=row.kind,
+            document_kind=kinds.get(row.document_id, "base"),
+            stakes=row.stakes,
+            state=row.state,
+        )
+        for row in rows
+    ]
+    found = contradictions.detect(candidates)
+    analysis.contradictions = await contradictions.reconcile(
+        db, analysis_id=analysis.id, org_id=analysis.org_id, found=found, run_id=run_id
+    )
+
+
+async def _amendment_impact(
+    db: AsyncSession,
+    analysis: Analysis,
+    *,
+    corpus: Corpus,
+    reconciliation,
+    previous_dates: list[dict],
+) -> None:
+    """Record what this read changed, when the package contains an amendment.
+
+    Only runs when there is an amendment in the package: on a first read of a
+    base solicitation every requirement is new, and calling that "23 additions"
+    would be noise dressed as a finding.
+    """
+    amendment_docs = [doc for doc in corpus.documents if doc.kind == "amendment"]
+    if not amendment_docs:
+        return
+
+    rows = (
+        await db.execute(select(Requirement).where(Requirement.analysis_id == analysis.id))
+    ).scalars().all()
+    by_key = {row.key: row for row in rows}
+    amendment_ids = {doc.id for doc in amendment_docs}
+
+    added_rows = [by_key[key] for key in reconciliation.added if key in by_key]
+    removed_rows = [by_key[key] for key in reconciliation.removed if key in by_key]
+
+    # The base document still contains the wording an amendment replaced, so a
+    # replacement arrives as an addition with no matching removal. Anything an
+    # amendment states is therefore matched against what stands elsewhere in
+    # the package: amendments win.
+    #
+    # Deliberately every open amendment requirement, not only the ones this run
+    # added. A package uploaded with its amendment already in it has no earlier
+    # run to have "added" anything, and pairing only fresh additions would
+    # leave two contradictory page limits both reading as live. Re-pairing is
+    # harmless: a requirement already superseded is no longer open.
+    from_amendment = [
+        row for row in rows if row.state == "open" and row.document_id in amendment_ids
+    ]
+    standing = [
+        row for row in rows if row.state == "open" and row.document_id not in amendment_ids
+    ]
+
+    pairs = amendments.pair(removed_rows, added_rows) + amendments.pair(standing, from_amendment)
+    invalidated = amendments.apply(pairs, by_key)
+
+    # Everything hanging off either half of a superseded pair: response checks,
+    # and the review findings somebody resolved against wording that has moved.
+    # Reached through the graph rather than by hand, so a Red Team finding is
+    # not quietly buried by an amendment.
+    if pairs:
+        await _propagate_amendment(
+            db, analysis, [by_key[link.old_key].id for link in pairs if link.old_key in by_key]
+            + [by_key[link.new_key].id for link in pairs if link.new_key in by_key],
+            label=amendment_docs[-1].name,
+        )
+
+    # A withdrawal leaves no replacement to pair with — the clause simply stops
+    # applying, while still sitting in the base document looking live. The
+    # amendment's own words are the only evidence, so they are read directly.
+    superseded = {link.old_key for link in pairs}
+    references = amendments.withdrawn_references(
+        "\n".join(chunk.text for chunk in corpus.chunks if chunk.document_id in amendment_ids)
+    )
+    withdrawn = amendments.withdraw(
+        references, [row for row in standing if row.key not in superseded]
+    )
+    removed_keys = [*reconciliation.removed, *(row.key for row in withdrawn)]
+
+    date_changes = amendments.date_diff(previous_dates, analysis.dates or [])
+
+    record = amendments.record(
+        label=amendment_docs[-1].name,
+        issued=datetime.now(UTC).isoformat(),
+        pairs=pairs,
+        added_keys=reconciliation.added,
+        removed_keys=removed_keys,
+        rows_by_key=by_key,
+        date_changes=date_changes,
+    )
+    if not record["changes"]:
+        # An amendment that touched nothing this analysis tracks is worth
+        # saying once in the log, and not worth a record that looks like news.
+        logger.info("amendment_no_tracked_changes", analysis_id=analysis.id, label=record["label"])
+        return
+
+    analysis.amendments = [*(analysis.amendments or []), record]
+    analysis.ledger = {**(analysis.ledger or {}), "invalidated": invalidated}
+    await db.flush()
+
+
+async def _propagate_amendment(
+    db: AsyncSession, analysis: Analysis, origins: list[str], *, label: str
+) -> None:
+    """Reopen what an amendment reached, and nothing else."""
+    from app.db.models.question import Question
+    from app.db.models.response_check import ResponseCheck
+    from app.db.models.review import ReviewFinding
+    from app.pipeline import propagation
+
+    async def load(model):
+        return list(
+            (await db.execute(select(model).where(model.analysis_id == analysis.id)))
+            .scalars()
+            .all()
+        )
+
+    requirements = await load(Requirement)
+    graph = propagation.build_graph(
+        requirements=requirements,
+        checks=await load(ResponseCheck),
+        questions=await load(Question),
+        findings=await load(ReviewFinding),
+    )
+    impacts = propagation.propagate(
+        graph, origins, cause=f"amendment {label}", detail="The clause it answers has changed."
+    )
+    analysis.ledger = {
+        **(analysis.ledger or {}),
+        "propagation": propagation.summarise(
+            impacts, cause=f"amendment {label}", considered=len(requirements)
+        ),
+    }
+    await db.flush()
 
 
 async def _write_questions(db: AsyncSession, analysis: Analysis, questions: list[dict]) -> None:

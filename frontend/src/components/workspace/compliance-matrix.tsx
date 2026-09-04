@@ -13,13 +13,15 @@ import {
 } from "@tanstack/react-table";
 import { Check, Download, Filter, Plus, Trash2, X } from "lucide-react";
 
-import { cn, pluralize } from "@/lib/utils";
+import { cn, pluralize, saveTextFile } from "@/lib/utils";
 import { matrixProgress } from "@/lib/derive";
+import { matrixApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/input";
 import { Checkbox, Combobox, Progress, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/controls";
 import { Pagination, Table, TableFrame, Td, Th, Tr } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/feedback";
+import { Tooltip } from "@/components/ui/overlay";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/overlay";
+import { Badge } from "@/components/ui/badge";
 import { notify } from "@/components/ui/toaster";
 import {
   CitationMeta,
@@ -35,6 +38,7 @@ import {
   RequirementTypeBadge,
   StakesBadge,
 } from "@/components/domain/primitives";
+import { RequirementMemory } from "@/components/workspace/memory";
 import { useMatrixStore } from "@/stores/matrix";
 import { useTeamStore } from "@/stores/workspace";
 import type { MatrixRow, MatrixStatus, RequirementType } from "@/types";
@@ -74,6 +78,7 @@ export function ComplianceMatrix({
   const [typeFilter, setTypeFilter] = React.useState<RequirementType | "all">("all");
   const [stakesFilter, setStakesFilter] = React.useState<string>("all");
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
+  const [checkFilter, setCheckFilter] = React.useState<string>("all");
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [selection, setSelection] = React.useState<Record<string, boolean>>({});
 
@@ -88,9 +93,10 @@ export function ComplianceMatrix({
         if (typeFilter !== "all" && row.type !== typeFilter) return false;
         if (stakesFilter !== "all" && row.stakes !== stakesFilter) return false;
         if (statusFilter !== "all" && row.status !== statusFilter) return false;
+        if (checkFilter !== "all" && (row.verification ?? "substantive") !== checkFilter) return false;
         return true;
       }),
-    [scoped, typeFilter, stakesFilter, statusFilter],
+    [scoped, typeFilter, stakesFilter, statusFilter, checkFilter],
   );
 
   const owners = React.useMemo(
@@ -150,6 +156,8 @@ export function ComplianceMatrix({
               compact
               clamp={2}
             />
+            <Provenance row={row.original} />
+            {analysisId ? <RequirementMemory analysisId={analysisId} row={row.original} /> : null}
           </div>
         ),
       },
@@ -195,6 +203,12 @@ export function ComplianceMatrix({
         size: 150,
       },
       {
+        accessorKey: "dueAt",
+        header: "Due",
+        cell: ({ row }) => <DueDateCell row={row.original} onCommit={updateRow} />,
+        size: 130,
+      },
+      {
         accessorKey: "responseLocation",
         header: "Response location",
         cell: ({ row }) => <EditableCell row={row.original} onCommit={updateRow} />,
@@ -204,6 +218,7 @@ export function ComplianceMatrix({
         accessorKey: "status",
         header: "Status",
         cell: ({ row }) => (
+          <div>
           <Select
             value={row.original.status}
             onValueChange={(value) => {
@@ -226,6 +241,8 @@ export function ComplianceMatrix({
               ))}
             </SelectContent>
           </Select>
+          <Clearance row={row.original} />
+          </div>
         ),
         size: 140,
       },
@@ -236,11 +253,11 @@ export function ComplianceMatrix({
           <Button
             variant="quiet"
             size="iconSm"
-            aria-label={`Delete ${row.original.reference}`}
+            aria-label={`Dismiss ${row.original.reference}`}
             onClick={() => {
               const removed = deleteRow(row.original.id);
               if (!removed) return;
-              notify.success("Requirement removed.", {
+              notify.success("Requirement dismissed.", {
                 description: removed.row.reference,
                 undo: () => restoreRow(removed.row, removed.index),
               });
@@ -268,7 +285,7 @@ export function ComplianceMatrix({
     }
 
     return base;
-  }, [analysisTitles, deleteRow, owners, restoreRow, showAnalysisColumn, updateRow]);
+  }, [analysisId, analysisTitles, deleteRow, owners, restoreRow, showAnalysisColumn, updateRow]);
 
   const table = useReactTable({
     data: filtered,
@@ -291,7 +308,12 @@ export function ComplianceMatrix({
 
   const selectedIds = Object.keys(selection).filter((id) => selection[id]);
   const progress = matrixProgress(scoped);
-  const filtersActive = typeFilter !== "all" || stakesFilter !== "all" || statusFilter !== "all" || Boolean(query);
+  const filtersActive =
+    typeFilter !== "all" ||
+    stakesFilter !== "all" ||
+    statusFilter !== "all" ||
+    checkFilter !== "all" ||
+    Boolean(query);
 
   return (
     <div className={cn("flex flex-col gap-4", className)}>
@@ -348,6 +370,21 @@ export function ComplianceMatrix({
                 {MATRIX_STATUS_LABEL[status]}
               </SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+        {/* Mechanical rules are the ones a machine settles on its own — page
+            counts, fonts, forms, file names. Being able to see only those, or
+            only the ones needing a judgement, is how a compliance lead splits
+            an afternoon's work from a week's. */}
+        <ExportButton analysisId={analysisId} className="ml-auto" />
+        <Select value={checkFilter} onValueChange={setCheckFilter}>
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Any check</SelectItem>
+            <SelectItem value="mechanical">Counted</SelectItem>
+            <SelectItem value="substantive">Needs judgement</SelectItem>
           </SelectContent>
         </Select>
         {filtersActive ? (
@@ -475,20 +512,7 @@ export function ComplianceMatrix({
             Delete
           </Button>
 
-          <Button
-            variant="quiet"
-            size="sm"
-            className="ml-auto"
-            onClick={() => {
-              notify.success("Matrix exported.", {
-                description: `${pluralize(selectedIds.length, "row")} written to DOCX.`,
-                action: { label: "Download", onClick: () => notify.info("Download started.") },
-              });
-            }}
-          >
-            <Download />
-            Export selection
-          </Button>
+          <ExportButton analysisId={analysisId} className="ml-auto" />
         </div>
       ) : null}
 
@@ -544,6 +568,179 @@ export function ComplianceMatrix({
         </TableFrame>
       )}
     </div>
+  );
+}
+
+/**
+ * How this requirement is known, and how it can be checked.
+ *
+ * Both halves matter to whoever is signing the response. A requirement the
+ * pattern sweep and a specialist both found is stronger than one only a model
+ * saw; a requirement that can be checked by counting should never be argued
+ * about. Neither fact is visible in the requirement's text, so it is shown
+ * beside it rather than left to be assumed.
+ */
+/**
+ * The matrix as a spreadsheet a compliance lead can work in.
+ *
+ * Exports every row rather than the selection: a partial matrix that looks
+ * like a whole one is how a requirement gets left out of the working copy.
+ * The citation travels on each row, so the file does not become a list of
+ * assertions the moment it is opened somewhere else.
+ */
+/**
+ * The team's internal date for answering a requirement.
+ *
+ * Not the solicitation's deadline — that is the same for every row and is
+ * already on the calendar. This is the date that actually governs whether the
+ * work happens, and it is the field a status meeting is run from.
+ */
+function DueDateCell({
+  row,
+  onCommit,
+}: {
+  row: MatrixRow;
+  onCommit: (id: string, patch: Partial<MatrixRow>) => void;
+}) {
+  const value = row.dueAt ? row.dueAt.slice(0, 10) : "";
+  const overdue = Boolean(row.dueAt && new Date(row.dueAt) < new Date() && row.status !== "complete");
+  return (
+    <input
+      type="date"
+      value={value}
+      aria-label={`Due date for ${row.reference}`}
+      onChange={(event) => onCommit(row.id, { dueAt: event.target.value || null })}
+      className={cn(
+        "h-8 w-full rounded-sm border border-line bg-paper px-2 text-xs tabular-nums text-ink",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-patina/40",
+        overdue && "border-seal/50 text-seal",
+      )}
+    />
+  );
+}
+
+/**
+ * Two exports, because they are for two different rooms.
+ *
+ * The ordinary one carries the citation on every row — a matrix that leaves
+ * the product without its citations becomes a list of assertions the moment it
+ * is opened somewhere else. The redacted one runs the personal-data patterns
+ * over every cell first, for the copy that goes to somebody outside the team.
+ * It is a separate button rather than a default because redacting an officer's
+ * email out of a quoted clause makes the quote wrong.
+ */
+function ExportButton({ analysisId, className }: { analysisId?: string; className?: string }) {
+  const [busy, setBusy] = React.useState<"plain" | "redacted" | null>(null);
+  if (!analysisId) return null;
+
+  async function run(redact: boolean) {
+    if (!analysisId) return;
+    setBusy(redact ? "redacted" : "plain");
+    try {
+      const csv = await matrixApi.exportCsv(analysisId, { redact });
+      saveTextFile(
+        `compliance-matrix-${analysisId}${redact ? "-redacted" : ""}.csv`,
+        csv,
+      );
+      notify.success(redact ? "Redacted matrix exported." : "Matrix exported.", {
+        description: redact
+          ? "Anything shaped like personal data was replaced, and each replacement says what it was."
+          : "Every row, with the clause and page it came from.",
+      });
+    } catch {
+      notify.error("The matrix could not be exported.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className={cn("flex items-center gap-1", className)}>
+      <Button variant="quiet" size="sm" disabled={busy !== null} onClick={() => run(false)}>
+        <Download />
+        {busy === "plain" ? "Exporting…" : "Export CSV"}
+      </Button>
+      <Tooltip content="The same rows with anything shaped like personal data replaced — an SSN, a direct line, a reference's address. For the copy that leaves the building.">
+        <Button variant="quiet" size="sm" disabled={busy !== null} onClick={() => run(true)}>
+          {busy === "redacted" ? "Redacting…" : "Redacted copy"}
+        </Button>
+      </Tooltip>
+    </div>
+  );
+}
+
+function Provenance({ row }: { row: MatrixRow }) {
+  const sources = row.sources ?? [];
+  const mechanical = (row.verification ?? "substantive") === "mechanical";
+  const bothPasses = sources.includes("sweep") && sources.includes("model");
+  const modelOnly = sources.includes("model") && !sources.includes("sweep");
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <Tooltip
+        content={
+          mechanical
+            ? "Checked by counting — page limits, fonts, margins, forms, file names. Never decided by a model."
+            : "Needs a person to read it. A model can draft the assessment; it cannot settle it."
+        }
+      >
+        <Badge tone={mechanical ? "slate" : "neutral"} shape="mono">
+          {mechanical ? "Counted" : "Judgement"}
+        </Badge>
+      </Tooltip>
+      {bothPasses ? (
+        <Tooltip content="Found by the deterministic sweep and by a specialist. Agreement between the two is the strongest signal extraction produces.">
+          <Badge tone="leaf" shape="mono">
+            Corroborated
+          </Badge>
+        </Tooltip>
+      ) : null}
+      {modelOnly ? (
+        <Tooltip content="Only a specialist reported this — no pattern matched it. Worth reading against the source before relying on it.">
+          <Badge tone="ochre" shape="mono">
+            Model only
+          </Badge>
+        </Tooltip>
+      ) : null}
+      {sources.includes("manual") ? (
+        <Tooltip content="Added or edited by hand. A run that does not find it will leave it alone.">
+          <Badge tone="neutral" shape="mono">
+            By hand
+          </Badge>
+        </Tooltip>
+      ) : null}
+      {row.state === "removed" ? (
+        <Tooltip content="The latest read of the package did not find this. It is kept so it can be accounted for, not deleted.">
+          <Badge tone="seal" shape="mono">
+            Not in latest read
+          </Badge>
+        </Tooltip>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * A disqualifying requirement is not cleared because a model said so.
+ *
+ * Marking one complete records who did it; until then the row says what is
+ * missing. This is the difference between a matrix that tracks work and one
+ * that launders an assumption into a green tick.
+ */
+function Clearance({ row }: { row: MatrixRow }) {
+  if (row.stakes !== "disqualifying" || row.status !== "complete") return null;
+  if (row.confirmedBy) {
+    return (
+      <p className="mt-1 flex items-center gap-1 text-2xs text-leaf">
+        <Check className="size-3" />
+        Confirmed by {row.confirmedBy}
+      </p>
+    );
+  }
+  return (
+    <p className="mt-1 text-2xs text-[color-mix(in_oklab,var(--ochre)_82%,var(--ink))]">
+      Needs a person to confirm
+    </p>
   );
 }
 

@@ -8,7 +8,9 @@ result into these JSONB arrays before exposing via the API.
 
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, Float, ForeignKey, Integer, String, Text
+from datetime import datetime
+
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -48,6 +50,16 @@ class Analysis(UUIDMixin, SoftDeleteMixin, Base):
         default="undecided",
     )
     decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ── Legal hold ───────────────────────────────────────────────────────
+    #: Exempts this pursuit from every retention timer until it comes off.
+    #: A fact about the pursuit rather than a setting on the policy: it has
+    #: to survive the policy being edited, and it has to say who put it
+    #: there and why.
+    legal_hold: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    legal_hold_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    legal_hold_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    legal_hold_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     spec_version: Mapped[str] = mapped_column(String(20), nullable=False, default="1.0")
 
     # ── Ownership ────────────────────────────────────────────────────────
@@ -93,3 +105,23 @@ class Analysis(UUIDMixin, SoftDeleteMixin, Base):
     #: External claims and document clauses must never be shown as the same kind
     #: of thing, so they are not stored as the same kind of thing either.
     research: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    #: What was read, by what, and what was not. Counted from chunk records
+    #: rather than estimated — the claim has to be falsifiable to be worth
+    #: making. Shape: {at, totals, documents[], byAgent, complete}.
+    coverage: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    #: Deterministic sweep totals for this run, so a drop in what the rules
+    #: find is visible without re-running the pass.
+    sweep: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    #: What the last run did to the Requirement Ledger: how many requirements
+    #: were added, changed, or stopped being found. A requirement disappearing
+    #: between runs is a finding, so the count is kept where a reviewer sees it.
+    #: Shape: {added, updated, unchanged, removed, removedWithWork: [...]}.
+    ledger: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    #: How many requirements this run found that cannot both be met, and what
+    #: changed. Shape: {found, added, closed}.
+    contradictions: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    #: The draft response bound to this solicitation, and the last check of it.
+    #: Shape: {documentId, fileName, version, at, summary}. A response is a
+    #: separately versioned corpus, never mixed into what the solicitation
+    #: demands — so it lives beside the analysis rather than inside it.
+    response: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)

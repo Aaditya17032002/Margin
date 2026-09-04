@@ -23,6 +23,10 @@ from app.pipeline.extract import PAGE_SEP, extract_text
 
 logger = get_logger()
 
+#: What the generic uploader accepts. `response` is deliberately absent: a
+#: draft response is bound to a solicitation through its own endpoint, which
+#: refuses the binding until the solicitation has actually been read. Letting
+#: one in here would produce a gap report with nothing to compare against.
 ALLOWED_KINDS = {"base", "attachment", "amendment"}
 
 

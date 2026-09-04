@@ -23,6 +23,10 @@ HEADING_PATTERNS = (
     re.compile(r"^\s*(\d{1,2}(?:\.\d{1,3}){0,3})[.)]?\s+(\S.{0,90})$"),
     re.compile(r"^\s*((?:SECTION|Section|PART|Part|ARTICLE|Article|APPENDIX|Appendix|ATTACHMENT|Attachment|EXHIBIT|Exhibit|ANNEX|Annex)\s+[A-Z0-9][-A-Z0-9.]*)[.:—–-]?\s*(.{0,90})$"),
     re.compile(r"^\s*([A-M]\.\d{1,2}(?:\.\d{1,2})*)\s+(\S.{0,90})$"),
+    # Attachment and exhibit identifiers as headings: "J-1 Wage Determination".
+    # Common enough in federal packages that missing them leaves every clause
+    # in an attachment with no section at all.
+    re.compile(r"^\s*([A-Z]{1,2}-\d{1,3}[a-z]?)\s+(\S.{0,90})$"),
 )
 
 # Lines that are shouted rather than numbered still read as headings.

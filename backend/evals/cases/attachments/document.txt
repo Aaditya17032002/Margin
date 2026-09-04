@@ -1,0 +1,18 @@
+ATTACHMENT J-1
+WAGE DETERMINATION AND LABOR STANDARDS
+Wage Determination No. 2026-0114, Revision 3.
+The Contractor shall pay not less than the prevailing wage rates listed herein.
+The Contractor shall submit certified payrolls within seven days of each pay period.
+The Contractor is required to post the wage determination at the work site.
+Failure to comply may result in withholding of payment.
+ATTACHMENT K-1REPRESENTATIONS AND CERTIFICATIONS
+The Offeror shall complete the representations and certifications at FAR 52.204-8.
+The Offeror must certify that it is not debarred, suspended, or proposed for debarment.
+The Offeror certifies that it has an active registration in SAM.gov with no active exclusions.
+The Offeror shall represent whether it is a small business under NAICS Code 541512.
+This certification is a material representation of fact as described in FAR 52.209-5.
+ATTACHMENT L-2
+SECURITY AND DATA HANDLING REQUIREMENTSPersonnel shall hold a Secret Facility Clearance prior to contract award.
+The Contractor may not subcontract any portion of this work without written consent.
+All deliverables shall be encrypted in accordance with DFARS 252.204-7012.
+Incidents shall be reported within 72 hours as described in Section H.

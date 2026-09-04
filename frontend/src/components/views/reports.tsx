@@ -185,6 +185,7 @@ export function ReportsView() {
                   <SelectContent>
                     <SelectItem value="DOCX">DOCX</SelectItem>
                     <SelectItem value="PDF">PDF</SelectItem>
+                    <SelectItem value="MD">Markdown</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>

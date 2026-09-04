@@ -1,0 +1,41 @@
+SOLICITATION, OFFER AND AWARD
+Standard Form 33
+Solicitation No. W912DY-26-R-0114
+Issued by: U.S. Army Corps of Engineers
+NAICS Code: 541512
+Set-Aside: Total Small Business Set-Aside
+
+SECTION A — Solicitation/Contract Form
+Offers are due no later than June 1, 2026 at 2:00 PM Eastern.
+Written questions are due May 14, 2026.
+SECTION B — Supplies or Services and Prices
+CLIN 0001 Base Period, Systems Integration Services, 12 months.CLIN 0002 Option Period One, Systems Integration Services, 12 months.
+SECTION C — Description/Specifications
+The Contractor shall provide enterprise systems integration services.
+The Contractor shall maintain a Quality Control Plan throughout performance.
+SECTION E — Inspection and Acceptance
+Inspection and acceptance shall be performed at destination.
+SECTION H — Special Contract Requirements
+The Contractor may not export, process, access or store Government Data outside the United States.
+Key personnel identified in the proposal shall not be replaced without the Contracting Officer's written consent.
+SECTION I — Contract Clauses
+FAR 52.204-7 System for Award Management is incorporated by reference.
+FAR 52.219-14 Limitations on Subcontracting applies to this acquisition.DFARS 252.204-7012 Safeguarding Covered Defense Information applies.
+SECTION K — Representations and Certifications
+Offerors shall complete the representations and certifications at FAR 52.204-8.
+The Offeror must certify that it is not debarred, suspended, or proposed for debarment.
+SECTION L — Instructions, Conditions, and Notices to Offerors
+L.1 Proposal Organization. Proposals shall be submitted in two separately bound volumes.
+Volume I — Technical shall not exceed 40 pages.
+Volume II — Price has no page limit.
+L.2 Format. Text shall be 12-point Times New Roman with 1-inch margins, single-spaced.
+L.3 Forms. Offerors must submit a completed Standard Form 33 and Attachment J-1.
+L.4 Submission. Proposals shall be submitted electronically as described in Section M.
+File names shall follow the convention SolicitationNo_OfferorName_VolumeX.pdf.L.5 Past Performance. Provide three references for contracts of similar scope performed within the last five years.
+SECTION M — Evaluation Factors for Award
+M.1 Basis for award is best value trade-off.
+M.2 Evaluation Factor 1, Technical Approach, is weighted 40 percent.
+M.3 Evaluation Factor 2, Past Performance, is weighted 30 percent.
+M.4 Evaluation Factor 3, Price, is weighted 30 percent.
+M.5 Technical Approach is significantly more important than Price.
+Award is anticipated on or about August 15, 2026.

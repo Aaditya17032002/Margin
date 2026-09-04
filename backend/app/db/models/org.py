@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import Integer, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, UUIDMixin
@@ -22,6 +23,12 @@ class Org(UUIDMixin, Base):
     seats_used: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     duns: Mapped[str] = mapped_column(String(20), nullable=True)
     cage: Mapped[str] = mapped_column(String(10), nullable=True)
+
+    #: How long documents are kept. Off until an admin turns it on, and
+    #: stored as one document because the classes a policy governs will
+    #: change and a migration per class makes that change expensive enough
+    #: to avoid. See ``app.pipeline.retention``.
+    retention: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
     # Relationships
     users = relationship("User", back_populates="org", lazy="selectin")

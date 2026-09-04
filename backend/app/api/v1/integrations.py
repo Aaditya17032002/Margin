@@ -192,26 +192,43 @@ async def disconnect_integration(provider: str, user: CurrentUser, db: DbSession
     return _to_response(integration)
 
 
-@router.get("/{provider}/files")
-async def list_files(
-    provider: str, user: CurrentUser, db: DbSession, folder: str | None = None
+@router.get("/{provider}/browse")
+async def browse_source(
+    provider: str, user: CurrentUser, db: DbSession, path: str = ""
 ):
-    """Live from Graph when the connection carries a token, otherwise whatever
-    tree the row was seeded with."""
+    """One level of a connected source, live.
+
+    ``path`` is an opaque token this endpoint issued. The client walks the tree
+    by handing back whatever it was given, which keeps mail, personal drives
+    and SharePoint libraries behind one contract.
+    """
     integration = await _load(provider, user.org_id, db)
     if not integration.connected:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"'{provider}' is not connected"
         )
     if not integration.token_ref or not graph.is_configured():
-        return integration.tree or []
+        raise HTTPException(
+            status_code=status.HTTP_412_PRECONDITION_FAILED,
+            detail=(
+                "This connection has no Microsoft credentials behind it. "
+                "Reconnect it — see INTEGRATIONS.md."
+            ),
+        )
 
     try:
         access = await graph.access_token(integration.id, provider, integration.token_ref)
-        files = await graph.list_files(access, provider, folder)
+        entries = await graph.browse(access, provider, path)
+    except graph.ConsentRequired as exc:
+        # Not a failure to retry: an administrator has to act.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"reason": "admin_consent_required", "scope": exc.scope, "message": str(exc)},
+        ) from exc
     except graph.GraphError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-    return [f.as_dict() for f in files]
+
+    return {"provider": provider, "path": path, "entries": [e.as_dict() for e in entries]}
 
 
 @router.post("/{provider}/import")
@@ -246,6 +263,11 @@ async def import_files(
     settings = get_settings()
     try:
         access = await graph.access_token(integration.id, provider, integration.token_ref)
+    except graph.ConsentRequired as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"reason": "admin_consent_required", "scope": exc.scope, "message": str(exc)},
+        ) from exc
     except graph.GraphError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 

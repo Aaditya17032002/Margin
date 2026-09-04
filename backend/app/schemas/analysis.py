@@ -8,6 +8,8 @@ from app.schemas.common import (
     CamelModel,
     Citation,
     Clin,
+    ContradictionSummary,
+    Coverage,
     DocType,
     DocumentPage,
     EvaluationFactor,
@@ -16,6 +18,8 @@ from app.schemas.common import (
     Gate,
     GoNoGo,
     KeyDate,
+    LedgerDelta,
+    ResponseBinding,
     RiskItem,
     SilentItem,
     Stage,
@@ -105,6 +109,14 @@ class AnalysisResponse(CamelModel):
     amendments: list[AmendmentRecord]
     pages: list[DocumentPage]
     versions: list[VersionRecord]
+    #: What was read and what was not. Empty on an analysis that has not run.
+    coverage: Coverage = Coverage()
+    #: What the last run changed in the Requirement Ledger.
+    ledger: LedgerDelta = LedgerDelta()
+    #: The draft response bound to this solicitation, if one has been.
+    response: ResponseBinding = ResponseBinding()
+    #: Requirement pairs the last run found that cannot both be met.
+    contradictions: ContradictionSummary = ContradictionSummary()
     #: Only a deep-research pass fills this in; every other mode leaves it at
     #: its "not_requested" default.
     research: ExternalResearch = ExternalResearch()

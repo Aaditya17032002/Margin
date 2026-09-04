@@ -20,13 +20,13 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { motion, useReducedMotion } from "motion/react";
-import { GripVertical, Plus, Send, Trash2 } from "lucide-react";
+import { Check, GripVertical, MessageSquareReply, Plus, Send, Trash2 } from "lucide-react";
 
 import { cn, pluralize } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/controls";
-import { Textarea, Field } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Switch } from "@/components/ui/controls";
+import { Input, Textarea, Field } from "@/components/ui/input";
 import { Callout, EmptyState } from "@/components/ui/feedback";
 import { Dialog, DialogContent, Tooltip } from "@/components/ui/overlay";
 import { notify } from "@/components/ui/toaster";
@@ -225,6 +225,143 @@ export function QAndABuilder({ analysis }: { analysis: Analysis }) {
   );
 }
 
+/**
+ * Where a question is in its life.
+ *
+ * `sent` was a boolean, so a question that had been answered looked exactly
+ * like one still waiting — and waiting is the state that needs chasing.
+ */
+function LifecycleBadge({ question }: { question: QAQuestion }) {
+  const status = question.status ?? (question.sent ? "submitted" : "draft");
+  if (status === "draft") return null;
+  if (status === "answered") {
+    return (
+      <Badge tone="leaf">
+        <Check className="size-3" aria-hidden />
+        Answered
+      </Badge>
+    );
+  }
+  if (status === "withdrawn") return <Badge tone="neutral">Withdrawn</Badge>;
+  return <Badge tone="ochre">Awaiting an answer</Badge>;
+}
+
+/**
+ * The agency's answer, and the way to record one.
+ *
+ * Stored verbatim: a Q&A answer is a contract document and the wording is the
+ * whole of it. Recording one reopens any response check that was satisfied
+ * against the old reading of the clause, and the toast says which — that
+ * consequence is the reason this exists rather than a notes field.
+ */
+function AgencyAnswer({ question }: { question: QAQuestion }) {
+  const recordAnswer = useQAStore((s) => s.recordAnswer);
+  const [open, setOpen] = React.useState(false);
+  const [answer, setAnswer] = React.useState("");
+  const [source, setSource] = React.useState("");
+  const [effect, setEffect] = React.useState<"clarified" | "amended" | "withdrawn">("clarified");
+  const [revised, setRevised] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+
+  if (question.answer) {
+    return (
+      <div className="rounded-sm border-l-2 border-leaf/45 bg-[var(--leaf-tint)] px-3 py-2">
+        <p className="text-2xs uppercase tracking-[0.08em] text-ink-faint">
+          {question.answerSource || "The agency"} answered
+        </p>
+        <p className="mt-1 text-sm leading-relaxed text-ink">{question.answer}</p>
+      </div>
+    );
+  }
+
+  const status = question.status ?? (question.sent ? "submitted" : "draft");
+  if (status !== "submitted") return null;
+
+  if (!open) {
+    return (
+      <Button variant="quiet" size="sm" onClick={() => setOpen(true)}>
+        <MessageSquareReply /> Record the answer
+      </Button>
+    );
+  }
+
+  return (
+    <div className="space-y-2 rounded-sm border border-line bg-paper-sunk p-3">
+      <Textarea
+        value={answer}
+        onChange={(event) => setAnswer(event.target.value)}
+        placeholder="Paste the agency's answer exactly as written."
+        rows={3}
+        aria-label="The agency's answer"
+      />
+      <Input
+        value={source}
+        onChange={(event) => setSource(event.target.value)}
+        placeholder="Where it came from — Amendment 0002, Q&A set 1, an email date"
+        aria-label="Where the answer came from"
+      />
+
+      {/* The field that makes this more than a notes box. An answer that
+          explains a clause and one that rewrites it call for completely
+          different work, and only the person reading it can say which. */}
+      <Select value={effect} onValueChange={(value) => setEffect(value as typeof effect)}>
+        <SelectTrigger>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="clarified">It explains the requirement — the wording stands</SelectItem>
+          <SelectItem value="amended">It changes the requirement</SelectItem>
+          <SelectItem value="withdrawn">The requirement no longer applies</SelectItem>
+        </SelectContent>
+      </Select>
+
+      {effect === "amended" ? (
+        <Textarea
+          value={revised}
+          onChange={(event) => setRevised(event.target.value)}
+          placeholder="The requirement as it now reads."
+          rows={2}
+          aria-label="The requirement as it now reads"
+        />
+      ) : null}
+
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          disabled={saving || !answer.trim() || (effect === "amended" && !revised.trim())}
+          onClick={async () => {
+            setSaving(true);
+            const result = await recordAnswer(question.id, {
+              answer: answer.trim(),
+              source: source.trim(),
+              effect,
+              revisedRequirement: revised.trim() || undefined,
+            });
+            setSaving(false);
+            setOpen(false);
+            const parts: string[] = [];
+            if (result.superseded) parts.push(`${result.superseded} was replaced.`);
+            if (result.withdrawn) parts.push(`${result.withdrawn} no longer applies.`);
+            if (result.reopened.length) {
+              parts.push(
+                `${pluralize(result.reopened.length, "answer")} written against the old reading reopened: ${result.reopened.join(", ")}.`,
+              );
+            }
+            notify.success("Answer recorded.", {
+              description: parts.join(" ") || "Nothing in the response had been answered against this yet.",
+            });
+          }}
+        >
+          Save the answer
+        </Button>
+        <Button variant="quiet" size="sm" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function SortableQuestion({
   question,
   index,
@@ -276,8 +413,9 @@ function SortableQuestion({
           <p className="text-sm leading-relaxed text-ink-faint">{question.rationale}</p>
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={source.tone}>{source.label}</Badge>
-            {question.sent ? <Badge tone="leaf">Sent</Badge> : null}
+            <LifecycleBadge question={question} />
           </div>
+          <AgencyAnswer question={question} />
           {question.citation ? (
             <CitationMeta
               citation={question.citation}

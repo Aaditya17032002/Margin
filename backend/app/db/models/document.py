@@ -18,7 +18,10 @@ class Document(UUIDMixin, Base):
     content_type: Mapped[str] = mapped_column(String(100), nullable=True)
     storage_path: Mapped[str] = mapped_column(String(1000), nullable=True)
     doc_kind: Mapped[str] = mapped_column(
-        value_enum("base", "attachment", "amendment", name="doc_kind"),
+        # `response` is the team's own draft, bound to this solicitation. It
+        # is stored in the same package but read as a separately versioned
+        # corpus, never mixed into what the solicitation demands.
+        value_enum("base", "attachment", "amendment", "response", name="doc_kind"),
         nullable=False,
         default="base",
     )

@@ -1,0 +1,57 @@
+{
+  "name": "State/municipal RFP — no FAR, different vocabulary",
+  "source": "synthetic",
+  "notes": "Labels quote the document, not a paraphrase — the matcher requires containment, so a label with words the document does not carry fails the extraction rather than testing it. Deliberately unlike the federal case: no uniform contract format, no FAR clauses, percentages written as (50%) rather than 'weighted 50 percent', PASSPort and MWBE instead of SAM.gov and small business set-asides. A sweep tuned only on federal phrasing scores badly here, which is the point of keeping this case.",
+  "exhaustive": ["limit", "form", "date"],
+  "expected": {
+    "limit": [
+      { "page": 2, "quote": "shall not exceed 60 pages" },
+      { "page": 2, "quote": "Arial" },
+      { "page": 2, "quote": "11-point" },
+      { "page": 2, "quote": "double-spaced" },
+      { "page": 2, "quote": "1-inch margins" },
+      { "page": 3, "quote": "not exceeding 25 MB in size" }
+    ],
+    "form": [
+      { "page": 3, "quote": "Attachment A" },
+      { "page": 3, "quote": "Attachment B" }
+    ],
+    "date": [
+      { "page": 1, "quote": "March 3, 2026" },
+      { "page": 2, "quote": "March 24, 2026" },
+      { "page": 2, "quote": "2026-04-02" },
+      { "page": 2, "quote": "2026-05-15" }
+    ],
+    "obligation": [
+      { "page": 2, "quote": "Proposers shall have completed a minimum of three (3) similar engagements" },
+      { "page": 2, "quote": "The Proposer must maintain an active registration in PASSPort" },
+      { "page": 2, "quote": "Proposers are required to hold all licenses" },
+      { "page": 2, "quote": "Proposals shall not exceed 60 pages" },
+      { "page": 2, "quote": "Text shall be Arial 11-point" },
+      { "page": 3, "quote": "Proposals shall be submitted in three parts" },
+      { "page": 3, "quote": "Each part shall be uploaded to PASSPort" },
+      { "page": 4, "quote": "Proposers shall certify their MWBE status" },
+      { "page": 4, "quote": "The Contractor may not export, process, access or store City Data" },
+      { "page": 4, "quote": "The Contractor is responsible for adhering to the City's IT security policies" }
+    ],
+    "instruction": [
+      { "page": 3, "quote": "Proposers must submit Attachment A" },
+      { "page": 3, "quote": "Proposers must submit Attachment B" },
+      { "page": 3, "quote": "Proposers must complete the MWBE Utilization Plan" }
+    ],
+    "certification": [
+      { "page": 4, "quote": "Proposers shall certify their MWBE status" }
+    ],
+    "evaluation": [
+      { "page": 3, "quote": "Technical Approach (50%)" },
+      { "page": 3, "quote": "Experience (30%)" },
+      { "page": 3, "quote": "more important than Price" }
+    ],
+    "cross_reference": [
+      { "page": 3, "quote": "as described in Section 7" }
+    ],
+    "volume": [
+      { "page": 3, "quote": "separate PDF" }
+    ]
+  }
+}

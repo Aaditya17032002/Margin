@@ -5,7 +5,7 @@ import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
 import { ArrowRight, CircleSlash, ExternalLink, FileDiff, Globe, MessageSquarePlus, Minus, Plus } from "lucide-react";
 
-import { cn, formatCurrency, pluralize } from "@/lib/utils";
+import { cn, formatCurrency, pluralize, saveTextFile } from "@/lib/utils";
 import { longDate, relative } from "@/lib/dates";
 import { listItem, staggerList } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
@@ -26,11 +26,120 @@ import { ComplianceMatrix } from "./compliance-matrix";
 import { useAnalysesStore, allFindings } from "@/stores/analyses";
 import { useQAStore } from "@/stores/qa";
 import { useReportsStore } from "@/stores/workspace";
-import type { Analysis, GoNoGo } from "@/types";
+import { decisionApi, governanceApi } from "@/lib/api";
+import type {
+  Analysis,
+  AuditEntry,
+  PiiScan,
+  DecisionEvidence,
+  GoNoGo,
+  ResearchClaim,
+  ResearchSource,
+} from "@/types";
 
 /* ================================================================ */
 /* Go / No-Go                                                        */
 /* ================================================================ */
+
+
+/**
+ * What is known, before somebody decides.
+ *
+ * Margin does not decide. Whether the company wants this customer, whether the
+ * team is free in March, what the principal thinks of the incumbent — none of
+ * that is in the document, and a product that produced a bid recommendation
+ * would be pretending otherwise.
+ *
+ * What it can do is make the decision accountable. This is deliberately the
+ * uncomfortable half — failed gates, unowned mandatory requirements, coverage
+ * that was incomplete, contradictions nobody resolved — because a record that
+ * only carried the reasons to bid would be a marketing document, and the value
+ * of one is that it is what you read when it went wrong.
+ */
+function DecisionEvidencePanel({ analysis }: { analysis: Analysis }) {
+  const [evidence, setEvidence] = React.useState<DecisionEvidence | null>(null);
+
+  React.useEffect(() => {
+    let live = true;
+    decisionApi
+      .evidence(analysis.id)
+      .then((result) => {
+        if (live) setEvidence(result);
+      })
+      .catch(() => {
+        if (live) setEvidence(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [analysis.id, analysis.updatedAt]);
+
+  if (!evidence || !evidence.considerations.length) return null;
+
+  const against = evidence.considerations.filter((c) => c.weight === "against");
+  const unknown = evidence.considerations.filter((c) => c.weight === "unknown");
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="What is known"
+        description={evidence.readiness.headline}
+      />
+      <div className="space-y-4 px-5 py-4">
+        {against.length ? (
+          <div>
+            <p className="text-2xs uppercase tracking-[0.08em] text-ink-faint">
+              Arguing against
+            </p>
+            <ul className="mt-2 space-y-2">
+              {against.map((item) => (
+                <li key={item.summary} className="flex items-start gap-2">
+                  <CircleSlash className="mt-0.5 size-4 shrink-0 text-seal" aria-hidden />
+                  <span className="min-w-0 text-sm leading-relaxed text-ink">
+                    {item.summary}
+                    {item.detail ? (
+                      <span className="block text-xs text-ink-soft">{item.detail}</span>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {unknown.length ? (
+          <div>
+            <p className="text-2xs uppercase tracking-[0.08em] text-ink-faint">
+              Still unknown
+            </p>
+            <ul className="mt-2 space-y-2">
+              {unknown.map((item) => (
+                <li key={item.summary} className="flex items-start gap-2">
+                  <Minus className="mt-0.5 size-4 shrink-0 text-ink-faint" aria-hidden />
+                  <span className="min-w-0 text-sm leading-relaxed text-ink">
+                    {item.summary}
+                    {item.detail ? (
+                      <span className="block text-xs text-ink-soft">{item.detail}</span>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <Well>
+          <p className="text-xs leading-relaxed text-ink-soft">
+            <strong className="font-medium text-ink">This is not a recommendation.</strong> A
+            number that said &ldquo;72% &mdash; bid&rdquo; would be believed, and nothing here
+            knows whether you want this customer or have the team free. Recording the decision
+            below freezes this list beside it, so the question six months from now is answerable.
+          </p>
+        </Well>
+      </div>
+    </Panel>
+  );
+}
 
 export function GoNoGoPanel({ analysis }: { analysis: Analysis }) {
   const reduce = useReducedMotion();
@@ -43,6 +152,11 @@ export function GoNoGoPanel({ analysis }: { analysis: Analysis }) {
 
   function record(decision: GoNoGo) {
     const previous = decide(analysis.id, decision, note.trim() || undefined);
+    // Recorded alongside the board's own state so the evidence is frozen with
+    // it. A decision with no record of what was known is a status field.
+    void decisionApi
+      .record(analysis.id, { decision, rationale: note.trim() || "No reason recorded." })
+      .catch(() => undefined);
     log({
       actor: "You",
       action: `recorded a ${decision === "no-bid" ? "No-bid" : decision === "bid" ? "Bid" : "Watch"} decision on`,
@@ -63,6 +177,7 @@ export function GoNoGoPanel({ analysis }: { analysis: Analysis }) {
 
   return (
     <div className="space-y-6">
+      <DecisionEvidencePanel analysis={analysis} />
       {/* The decision reads as one object: the standing, the reason, and the
           three buttons that settle it. Splitting them across two panels made
           the gauge look like an ornament. */}
@@ -693,6 +808,16 @@ export function ResearchPanel({ analysis }: { analysis: Analysis }) {
   // thing — nobody has searched the web for this — and neither should crash.
   const status = research?.status ?? "not_requested";
   const sources = research?.sources ?? [];
+  // An older pass stored only the prose. Falling back to paragraphs with no
+  // attribution is right: it is what we actually know about them.
+  const claims: ResearchClaim[] =
+    research?.claims?.length
+      ? research.claims
+      : (research?.summary ?? "")
+          .split(/\n{2,}/)
+          .map((text) => text.trim())
+          .filter(Boolean)
+          .map((text) => ({ text, sources: [] }));
 
   if (!research || status === "not_requested") {
     return (
@@ -709,8 +834,8 @@ export function ResearchPanel({ analysis }: { analysis: Analysis }) {
     <div className="space-y-5">
       <Callout tone="slate" title="Read on the open web, not in your document">
         Nothing on this tab is a clause in the solicitation. It is background on
-        the rules the solicitation sits inside, and every claim carries the page
-        it came from. Check it before you rely on it.
+        the rules the solicitation sits inside. Each paragraph shows the pages
+        that back it, or says plainly that nothing was cited for it.
       </Callout>
 
       {trouble ? (
@@ -736,7 +861,7 @@ export function ResearchPanel({ analysis }: { analysis: Analysis }) {
         </Panel>
       ) : null}
 
-      {research.summary ? (
+      {claims.length > 0 ? (
         <Panel>
           <PanelHeader
             title="What it found"
@@ -746,13 +871,10 @@ export function ResearchPanel({ analysis }: { analysis: Analysis }) {
               ) : null
             }
           />
-          <div className="space-y-3 px-5 pb-5 text-sm leading-relaxed text-ink-soft">
-            {research.summary
-              .split(/\n{2,}/)
-              .filter(Boolean)
-              .map((para, index) => (
-                <p key={index}>{para}</p>
-              ))}
+          <div className="space-y-5 px-5 pb-5">
+            {claims.map((claim, index) => (
+              <Claim key={index} claim={claim} sources={sources} />
+            ))}
           </div>
         </Panel>
       ) : null}
@@ -807,6 +929,55 @@ export function ResearchPanel({ analysis }: { analysis: Analysis }) {
   );
 }
 
+/**
+ * One paragraph of the research report with the pages that back it.
+ *
+ * The attribution sits under the sentence it belongs to, not in a list at the
+ * end of the section, because the question a reader actually has is "says
+ * who?" about one specific line. A paragraph the search tool cited nothing for
+ * says so — borrowing the neighbouring paragraph's source would be the exact
+ * dishonesty this whole tab exists to prevent.
+ */
+function Claim({ claim, sources }: { claim: ResearchClaim; sources: ResearchSource[] }) {
+  const cited = claim.sources
+    .map((url) => sources.find((source) => source.url === url))
+    .filter((source): source is ResearchSource => Boolean(source));
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm leading-relaxed text-ink-soft">{claim.text}</p>
+      {cited.length > 0 ? (
+        <p className="flex flex-wrap items-center gap-1.5">
+          <span className="font-mono text-2xs uppercase tracking-[0.1em] text-ink-faint">
+            Source
+          </span>
+          {cited.map((source) => (
+            <a
+              key={source.url}
+              href={source.url}
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              title={source.title}
+              className={cn(
+                "inline-flex max-w-full items-center gap-1.5 rounded-md border border-line-strong",
+                "bg-paper-raised px-2 py-1 font-mono text-2xs text-ink-soft",
+                "transition-colors duration-150 hover:border-patina hover:bg-patina-tint hover:text-patina",
+              )}
+            >
+              <Globe className="size-3 shrink-0 opacity-70" aria-hidden />
+              <span className="truncate">{source.site || source.url}</span>
+            </a>
+          ))}
+        </p>
+      ) : (
+        <p className="font-mono text-2xs uppercase tracking-[0.1em] text-ink-faint">
+          No source cited — check before relying on it
+        </p>
+      )}
+    </div>
+  );
+}
+
 /* ================================================================ */
 /* Amendments & diff                                                 */
 /* ================================================================ */
@@ -834,6 +1005,9 @@ export function AmendmentsPanel({ analysis }: { analysis: Analysis }) {
 
   const target = analysis.amendments.find((a) => a.id === right) ?? analysis.amendments[0];
   const critical = target.changes.filter((c) => c.critical);
+  // The question an amendment actually raises: which of our answers is now
+  // wrong? It leads the panel, above the diff that explains why.
+  const invalidated = analysis.ledger?.invalidated ?? [];
 
   return (
     <div className="space-y-5">
@@ -876,6 +1050,26 @@ export function AmendmentsPanel({ analysis }: { analysis: Analysis }) {
           </div>
         </div>
       </Panel>
+
+      {invalidated.length > 0 ? (
+        <Callout
+          tone="seal"
+          title={`${pluralize(invalidated.length, "answer")} written against wording that changed`}
+        >
+          <ul className="mt-1 space-y-1">
+            {invalidated.map((entry) => (
+              <li key={entry} className="text-sm leading-relaxed">
+                {entry}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+            The work moved to the replacement requirement and kept its owner, but not its status —
+            an answer to the old wording is not an answer to the new one until someone confirms it
+            still holds.
+          </p>
+        </Callout>
+      ) : null}
 
       {critical.length > 0 ? (
         <Callout tone="seal" title={`${pluralize(critical.length, "change")} moved a deadline or a gate`}>
@@ -936,12 +1130,203 @@ function DiffMark({ kind }: { kind: "added" | "changed" | "removed" }) {
 /* Versions & activity                                               */
 /* ================================================================ */
 
+
+/**
+ * Everything that happened to this analysis, and who did it.
+ *
+ * Assembled on read from the append-only histories the requirement ledger, the
+ * response checks and the Q&A already keep. Nothing is written for this view:
+ * an audit log kept separately from the thing it describes is a second version
+ * of history, and the two eventually disagree.
+ */
+function AuditTrail({ analysis }: { analysis: Analysis }) {
+  const [entries, setEntries] = React.useState<AuditEntry[] | null>(null);
+  const [scope, setScope] = React.useState<string>("all");
+
+  React.useEffect(() => {
+    let live = true;
+    governanceApi
+      .audit(analysis.id)
+      .then((result) => {
+        if (live) setEntries(result.entries);
+      })
+      .catch(() => {
+        if (live) setEntries([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [analysis.id, analysis.updatedAt]);
+
+  if (!entries?.length) return null;
+
+  const scopes = ["all", ...Array.from(new Set(entries.map((entry) => entry.scope)))];
+  const visible = scope === "all" ? entries : entries.filter((entry) => entry.scope === scope);
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="The record"
+        description="Every change to this analysis, newest first — including the ones Margin made."
+        actions={
+          <div className="flex items-center gap-2">
+            <Select value={scope} onValueChange={setScope}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {scopes.map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name === "all" ? "Everything" : AUDIT_SCOPES[name] ?? name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <AuditExport analysisId={analysis.id} />
+          </div>
+        }
+      />
+      <ol className="max-h-[28rem] divide-y divide-line overflow-y-auto">
+        {visible.slice(0, 200).map((entry, index) => (
+          <li key={`${entry.at}-${index}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-5 py-3">
+            <span className="w-32 shrink-0 font-mono text-2xs tabular-nums text-ink-faint">
+              {entry.at ? relative(entry.at) : "—"}
+            </span>
+            <Badge tone="neutral" shape="mono">
+              {AUDIT_SCOPES[entry.scope] ?? entry.scope}
+            </Badge>
+            <span className="font-mono text-2xs text-patina">{entry.subject}</span>
+            <span className="min-w-0 flex-1 text-xs leading-relaxed text-ink-soft">
+              <strong className="font-medium text-ink">{entry.event}</strong>
+              {entry.detail ? ` — ${entry.detail}` : ""}
+            </span>
+            <span className="shrink-0 text-2xs text-ink-faint">{entry.actor || "Margin"}</span>
+          </li>
+        ))}
+      </ol>
+      {visible.length > 200 ? (
+        <p className="px-5 py-3 text-2xs text-ink-faint">
+          Showing the most recent 200 of {visible.length}. The evidence pack carries all of them.
+        </p>
+      ) : null}
+    </Panel>
+  );
+}
+
+/**
+ * The trail as a file, oldest first.
+ *
+ * A record that cannot leave the product is one nobody can hand to the person
+ * asking for it, which is the only situation an audit trail exists for.
+ */
+function AuditExport({ analysisId }: { analysisId: string }) {
+  const [busy, setBusy] = React.useState(false);
+  return (
+    <Button
+      variant="quiet"
+      size="sm"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          saveTextFile(`audit-${analysisId}.csv`, await governanceApi.auditCsv(analysisId));
+          notify.success("The record exported.", {
+            description: "Oldest first — a file read as a narrative is read forwards.",
+          });
+        } catch {
+          notify.error("The record could not be exported.");
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {busy ? "Exporting…" : "Export"}
+    </Button>
+  );
+}
+
+/**
+ * What in this package looks like personal data.
+ *
+ * Run before anything leaves the product. Detection is by pattern and
+ * deterministic: a model that sometimes finds an SSN is worse than a regular
+ * expression that always finds that shape, because the failure mode is
+ * invisible. Values are never shown in full — listing every SSN in a document
+ * in order to warn about them would be absurd.
+ */
+function PersonalData({ analysis }: { analysis: Analysis }) {
+  const [scan, setScan] = React.useState<PiiScan | null>(null);
+
+  React.useEffect(() => {
+    let live = true;
+    governanceApi
+      .pii(analysis.id)
+      .then((result) => {
+        if (live) setScan(result);
+      })
+      .catch(() => {
+        if (live) setScan(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [analysis.id, analysis.updatedAt]);
+
+  if (!scan || scan.total === 0) return null;
+
+  const labels = new Map(scan.kinds.map((kind) => [kind.kind, kind.label]));
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="Personal data in this package"
+        description={`${scan.total} span(s) look like personal data. The matrix and the evidence pack can be exported with these replaced.`}
+      />
+      <div className="space-y-3 px-5 pb-5">
+        <div className="flex flex-wrap gap-1.5">
+          {Object.entries(scan.counts).map(([kind, count]) => (
+            <Badge key={kind} tone="ochre" shape="mono">
+              {labels.get(kind) ?? kind}: {count}
+            </Badge>
+          ))}
+        </div>
+        <ul className="space-y-1 text-xs text-ink-soft">
+          {scan.documents
+            .filter((document) => document.total > 0)
+            .map((document) => (
+              <li key={document.documentId}>
+                <span className="font-mono text-2xs text-patina">{document.fileName}</span> —{" "}
+                {document.total} found
+              </li>
+            ))}
+        </ul>
+        <p className="text-2xs leading-relaxed text-ink-faint">
+          Nothing is removed from the documents themselves. Redaction happens on the way out, and
+          each replacement says what it was, because an auditor asking what you took out deserves
+          better than “something”.
+        </p>
+      </div>
+    </Panel>
+  );
+}
+
+const AUDIT_SCOPES: Record<string, string> = {
+  run: "Run",
+  amendment: "Amendment",
+  requirement: "Requirement",
+  response: "Response",
+  question: "Question",
+};
+
 export function VersionsPanel({ analysis }: { analysis: Analysis }) {
   const allActivity = useReportsStore((s) => s.activity);
   const activity = allActivity.filter((a) => a.analysisId === analysis.id);
 
   return (
-    <div className="grid gap-6 @3xl:grid-cols-2">
+    <div className="space-y-6">
+      <AuditTrail analysis={analysis} />
+      <PersonalData analysis={analysis} />
+      <div className="grid gap-6 @3xl:grid-cols-2">
       <Panel>
         <PanelHeader title="Version history" description="Every pass Margin made, and every human who changed it." />
         {analysis.versions.length === 0 ? (
@@ -997,6 +1382,7 @@ export function VersionsPanel({ analysis }: { analysis: Analysis }) {
           </ul>
         )}
       </Panel>
+      </div>
     </div>
   );
 }

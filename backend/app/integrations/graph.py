@@ -48,23 +48,53 @@ class GraphError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class RemoteFile:
+class RemoteEntry:
+    """One row in the browser, whatever the provider calls it underneath.
+
+    ``id`` is an opaque token. The client hands it back to browse into the
+    entry, or to import it, and never has to know that a SharePoint file needs
+    a drive id while a mail attachment needs a message id.
+    """
+
     id: str
     name: str
-    size: int
-    path: str
-    kind: str  # "file" | "folder"
+    #: site | drive | folder | message | file
+    kind: str
+    size: int = 0
     modified: str = ""
+    #: The second line: who sent the mail, which folder the file is in.
+    subtitle: str = ""
+    #: True when this is something Margin can read. Everything else is a
+    #: container you open.
+    importable: bool = False
 
     def as_dict(self) -> dict:
         return {
             "id": self.id,
             "name": self.name,
-            "size": self.size,
-            "path": self.path,
             "kind": self.kind,
+            "size": self.size,
             "modified": self.modified,
+            "subtitle": self.subtitle,
+            "importable": self.importable,
         }
+
+
+class ConsentRequired(GraphError):
+    """The tenant has not granted a permission this call needs.
+
+    Distinct from a plain failure because the remedy is a person — an
+    administrator — not a retry, and the workspace should say which permission
+    to ask them for.
+    """
+
+    def __init__(self, scope: str, message: str = "") -> None:
+        self.scope = scope
+        super().__init__(message or f"An administrator must grant {scope} for this tenant.")
+
+
+# Which permission each provider needs an admin to consent to, when it needs one.
+ADMIN_SCOPES = {"sharepoint": "Sites.Read.All and Files.Read.All"}
 
 
 # ── Token storage ────────────────────────────────────────────────────────
@@ -200,99 +230,207 @@ async def _get(access: str, path: str, **params: Any) -> dict:
             headers={"Authorization": f"Bearer {access}"},
             params=params or None,
         )
+    if response.status_code in (401, 403):
+        # 403 on a Sites/Files call in a tenant that never granted admin
+        # consent is the single most common way this goes wrong, and it needs
+        # a person, not a retry.
+        body = response.text
+        if "Authorization_RequestDenied" in body or "AADSTS65001" in body or "accessDenied" in body:
+            raise ConsentRequired(ADMIN_SCOPES.get("sharepoint", "the requested permission"))
+        logger.error("graph_call_denied", path=path, status=response.status_code)
+        raise GraphError("This connection is not permitted to read that. It may need re-authorising.")
     if response.status_code >= 400:
         logger.error("graph_call_failed", path=path, status=response.status_code)
         raise GraphError(f"Microsoft Graph returned {response.status_code} for {path}.")
     return response.json()
 
 
-async def list_files(access: str, provider: str, folder_id: str | None = None) -> list[RemoteFile]:
-    """One level of the tree. Deliberately not recursive: a capture team picks a
-    document, and crawling a tenant's whole drive is not that."""
+# ── Browsing ─────────────────────────────────────────────────────────────
+#
+# One walk covers all three providers. The client passes back whatever `id` it
+# was given and never learns that a SharePoint file needs a drive id while a
+# mail attachment needs a message id.
+#
+#   outlook      ""                       → recent mail with attachments
+#                "msg:<id>"               → that mail's attachments
+#   onedrive     ""                       → drive root
+#                "item:<id>"              → that folder
+#   sharepoint   ""                       → sites
+#                "site:<id>"              → that site's document libraries
+#                "drive:<id>"             → library root
+#                "drive:<id>/item:<id>"   → that folder
+
+
+def _readable(name: str) -> bool:
+    return name.lower().endswith(READABLE_SUFFIXES)
+
+
+async def browse(access: str, provider: str, path: str = "") -> list[RemoteEntry]:
+    """One level of a connected source."""
+    path = (path or "").strip()
     if provider == "outlook":
-        return await _list_mail_attachments(access)
-
+        return await _browse_mail(access, path)
     if provider == "onedrive":
-        path = "/me/drive/root/children" if not folder_id else f"/me/drive/items/{folder_id}/children"
-    else:  # sharepoint
-        path = (
-            f"/drives/{folder_id}/root/children"
-            if folder_id and folder_id.startswith("b!")
-            else ("/me/followedSites" if not folder_id else f"/sites/{folder_id}/drive/root/children")
-        )
+        return await _browse_onedrive(access, path)
+    if provider == "sharepoint":
+        return await _browse_sharepoint(access, path)
+    raise GraphError(f"Unknown provider: {provider}")
 
-    payload = await _get(access, path, **{"$top": 200})
-    files: list[RemoteFile] = []
-    for item in payload.get("value", []):
-        is_folder = "folder" in item
-        name = str(item.get("name") or item.get("displayName") or "")
-        if not is_folder and not name.lower().endswith(READABLE_SUFFIXES):
-            continue
-        files.append(
-            RemoteFile(
-                id=str(item.get("id") or ""),
-                name=name,
-                size=int(item.get("size") or 0),
-                path=str((item.get("parentReference") or {}).get("path") or ""),
-                kind="folder" if is_folder else "file",
-                modified=str(item.get("lastModifiedDateTime") or ""),
+
+async def _browse_mail(access: str, path: str) -> list[RemoteEntry]:
+    if path.startswith("msg:"):
+        message_id = path[4:]
+        payload = await _get(
+            access, f"/me/messages/{message_id}/attachments", **{"$select": "id,name,size,contentType"}
+        )
+        return [
+            RemoteEntry(
+                id=f"msg:{message_id}/att:{a.get('id')}",
+                name=str(a.get("name") or ""),
+                kind="file",
+                size=int(a.get("size") or 0),
+                importable=True,
             )
-        )
-    return files
+            for a in payload.get("value", [])
+            if _readable(str(a.get("name") or ""))
+        ]
 
-
-async def _list_mail_attachments(access: str) -> list[RemoteFile]:
-    """Recent mail carrying a readable attachment. A solicitation usually
-    arrives as one, and hunting for it in a browser is the thing this replaces."""
+    # The mailbox itself: recent threads that carry something readable.
+    # `$expand` matters — fetching attachments per message was a request per
+    # row, which made opening the mailbox take seconds.
     payload = await _get(
         access,
         "/me/messages",
         **{
             "$filter": "hasAttachments eq true",
-            "$select": "id,subject,receivedDateTime",
+            "$select": "id,subject,receivedDateTime,from",
+            "$expand": "attachments($select=id,name,size)",
             "$orderby": "receivedDateTime desc",
-            "$top": 25,
+            "$top": 40,
         },
     )
-    files: list[RemoteFile] = []
+    entries: list[RemoteEntry] = []
     for message in payload.get("value", []):
-        message_id = message.get("id")
-        attachments = await _get(
-            access, f"/me/messages/{message_id}/attachments", **{"$select": "id,name,size"}
+        readable = [a for a in (message.get("attachments") or []) if _readable(str(a.get("name") or ""))]
+        if not readable:
+            continue
+        sender = ((message.get("from") or {}).get("emailAddress") or {})
+        entries.append(
+            RemoteEntry(
+                id=f"msg:{message.get('id')}",
+                name=str(message.get("subject") or "(no subject)"),
+                kind="message",
+                size=sum(int(a.get("size") or 0) for a in readable),
+                modified=str(message.get("receivedDateTime") or ""),
+                subtitle=str(sender.get("name") or sender.get("address") or ""),
+                # A single readable attachment is the common case; skipping a
+                # click into a one-item folder is the whole point of noticing.
+                importable=False,
+            )
         )
-        for attachment in attachments.get("value", []):
-            name = str(attachment.get("name") or "")
-            if not name.lower().endswith(READABLE_SUFFIXES):
-                continue
-            files.append(
-                RemoteFile(
-                    # The mail id travels with the attachment id so a download
-                    # can find it again without a second search.
-                    id=f"{message_id}::{attachment.get('id')}",
+    return entries
+
+
+async def _browse_onedrive(access: str, path: str) -> list[RemoteEntry]:
+    endpoint = (
+        f"/me/drive/items/{path[5:]}/children" if path.startswith("item:") else "/me/drive/root/children"
+    )
+    payload = await _get(access, endpoint, **{"$top": 200, "$orderby": "folder,name"})
+    return _drive_entries(payload, prefix="")
+
+
+async def _browse_sharepoint(access: str, path: str) -> list[RemoteEntry]:
+    if not path:
+        # `search=*` is the only reliable way to enumerate sites a person can
+        # reach; `followedSites` is empty for most people, which read as a
+        # broken integration rather than an empty one.
+        payload = await _get(access, "/sites", **{"search": "*", "$top": 100})
+        return [
+            RemoteEntry(
+                id=f"site:{site.get('id')}",
+                name=str(site.get("displayName") or site.get("name") or ""),
+                kind="site",
+                subtitle=str(site.get("webUrl") or ""),
+            )
+            for site in payload.get("value", [])
+            if site.get("id")
+        ]
+
+    if path.startswith("site:"):
+        payload = await _get(access, f"/sites/{path[5:]}/drives", **{"$top": 100})
+        return [
+            RemoteEntry(
+                id=f"drive:{drive.get('id')}",
+                name=str(drive.get("name") or "Documents"),
+                kind="drive",
+                subtitle=str(drive.get("description") or "Document library"),
+            )
+            for drive in payload.get("value", [])
+            if drive.get("id")
+        ]
+
+    drive_id, _, rest = path.partition("/")
+    drive_id = drive_id[6:]
+    endpoint = (
+        f"/drives/{drive_id}/items/{rest[5:]}/children"
+        if rest.startswith("item:")
+        else f"/drives/{drive_id}/root/children"
+    )
+    payload = await _get(access, endpoint, **{"$top": 200, "$orderby": "folder,name"})
+    return _drive_entries(payload, prefix=f"drive:{drive_id}/")
+
+
+def _drive_entries(payload: dict, prefix: str) -> list[RemoteEntry]:
+    """Folders first, then readable files. Everything else is not shown —
+    offering a .pptx Margin cannot read is a dead end dressed as a choice."""
+    folders: list[RemoteEntry] = []
+    files: list[RemoteEntry] = []
+    for item in payload.get("value", []):
+        name = str(item.get("name") or "")
+        item_id = str(item.get("id") or "")
+        if not item_id or not name:
+            continue
+        token = f"{prefix}item:{item_id}"
+        if "folder" in item:
+            count = int((item.get("folder") or {}).get("childCount") or 0)
+            folders.append(
+                RemoteEntry(
+                    id=token,
                     name=name,
-                    size=int(attachment.get("size") or 0),
-                    path=str(message.get("subject") or ""),
-                    kind="file",
-                    modified=str(message.get("receivedDateTime") or ""),
+                    kind="folder",
+                    modified=str(item.get("lastModifiedDateTime") or ""),
+                    subtitle=f"{count} item{'' if count == 1 else 's'}" if count else "Empty",
                 )
             )
-    return files
+        elif _readable(name):
+            files.append(
+                RemoteEntry(
+                    id=token,
+                    name=name,
+                    kind="file",
+                    size=int(item.get("size") or 0),
+                    modified=str(item.get("lastModifiedDateTime") or ""),
+                    subtitle=str(((item.get("lastModifiedBy") or {}).get("user") or {}).get("displayName") or ""),
+                    importable=True,
+                )
+            )
+    return folders + files
 
 
 async def download(access: str, provider: str, file_id: str) -> tuple[bytes, str]:
     """The bytes and the filename, fetched only when someone asks to read it."""
     if provider == "outlook":
-        message_id, _, attachment_id = file_id.partition("::")
-        payload = await _get(access, f"/me/messages/{message_id}/attachments/{attachment_id}")
-        raw = payload.get("contentBytes")
-        if not raw:
-            raise GraphError("That attachment has no downloadable content.")
-        return base64.b64decode(raw), str(payload.get("name") or "attachment")
+        return await _download_attachment(access, file_id)
 
-    meta = await _get(
-        access,
-        f"/me/drive/items/{file_id}" if provider == "onedrive" else f"/drives/items/{file_id}",
-    )
+    if provider == "onedrive":
+        item_id = file_id[5:] if file_id.startswith("item:") else file_id
+        meta = await _get(access, f"/me/drive/items/{item_id}")
+    else:
+        drive_part, _, item_part = file_id.partition("/")
+        if not drive_part.startswith("drive:") or not item_part.startswith("item:"):
+            raise GraphError("That file reference is not one Margin issued.")
+        meta = await _get(access, f"/drives/{drive_part[6:]}/items/{item_part[5:]}")
+
     url = meta.get("@microsoft.graph.downloadUrl")
     if not url:
         raise GraphError("Microsoft Graph did not return a download link for that file.")
@@ -301,3 +439,16 @@ async def download(access: str, provider: str, file_id: str) -> tuple[bytes, str
     if response.status_code >= 400:
         raise GraphError(f"Downloading that file returned {response.status_code}.")
     return response.content, str(meta.get("name") or "document")
+
+
+async def _download_attachment(access: str, file_id: str) -> tuple[bytes, str]:
+    message_part, _, attachment_part = file_id.partition("/")
+    if not message_part.startswith("msg:") or not attachment_part.startswith("att:"):
+        raise GraphError("That attachment reference is not one Margin issued.")
+    payload = await _get(
+        access, f"/me/messages/{message_part[4:]}/attachments/{attachment_part[4:]}"
+    )
+    raw = payload.get("contentBytes")
+    if not raw:
+        raise GraphError("That attachment has no downloadable content.")
+    return base64.b64decode(raw), str(payload.get("name") or "attachment")

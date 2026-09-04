@@ -7,7 +7,11 @@ from app.db.models.document import Document
 from app.db.models.doc_chunk import DocChunk
 from app.db.models.finding import Finding
 from app.db.models.citation import Citation
-from app.db.models.matrix_row import MatrixRow
+from app.db.models.requirement import Requirement
+from app.db.models.response_check import ResponseCheck
+from app.db.models.contradiction import Contradiction
+from app.db.models.review import ReviewFinding, ReviewRound
+from app.db.models.verdict import Verdict
 from app.db.models.question import Question
 from app.db.models.notification import Notification
 from app.db.models.team_member import TeamMember
@@ -15,6 +19,8 @@ from app.db.models.team_invite import TeamInvite
 from app.db.models.integration import Integration
 from app.db.models.template import Template
 from app.db.models.knowledge import KnowledgeItem
+from app.db.models.decision import DecisionRecord
+from app.db.models.memory import ContentBlock, PastPerformance
 from app.db.models.report import Report
 from app.db.models.activity import ActivityLog
 from app.db.models.preference import Preference
@@ -27,7 +33,12 @@ __all__ = [
     "DocChunk",
     "Finding",
     "Citation",
-    "MatrixRow",
+    "Requirement",
+    "ResponseCheck",
+    "Contradiction",
+    "ReviewRound",
+    "ReviewFinding",
+    "Verdict",
     "Question",
     "Notification",
     "TeamMember",
@@ -35,6 +46,9 @@ __all__ = [
     "Integration",
     "Template",
     "KnowledgeItem",
+    "PastPerformance",
+    "ContentBlock",
+    "DecisionRecord",
     "Report",
     "ActivityLog",
     "Preference",

@@ -24,6 +24,7 @@ class WorkerSettings:
         "app.workers.run_analysis.run_analysis_task",
         "app.workers.generate_report.generate_report_task",
         "app.workers.refresh_amendment.refresh_amendment_task",
+        "app.workers.check_response.check_response_task",
     ]
     redis_settings = get_redis_settings()
     max_jobs = 10

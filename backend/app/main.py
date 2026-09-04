@@ -85,8 +85,11 @@ def create_app() -> FastAPI:
         analyses,
         documents,
         ingest,
+        contradictions,
         matrix,
         questions,
+        response,
+        reviews,
         findings,
         versions,
         notifications,
@@ -94,11 +97,16 @@ def create_app() -> FastAPI:
         integrations,
         templates,
         knowledge,
+        memory,
         preferences,
         reports,
         deadlines,
+        decisions,
         activity,
         search,
+        verification,
+        weighting,
+        governance,
     )
 
     prefix = settings.API_V1_PREFIX
@@ -107,6 +115,9 @@ def create_app() -> FastAPI:
     app.include_router(documents.router, prefix=prefix)
     app.include_router(ingest.router, prefix=prefix)
     app.include_router(matrix.router, prefix=prefix)
+    app.include_router(contradictions.router, prefix=prefix)
+    app.include_router(response.router, prefix=prefix)
+    app.include_router(reviews.router, prefix=prefix)
     app.include_router(questions.router, prefix=prefix)
     app.include_router(findings.router, prefix=prefix)
     app.include_router(versions.router, prefix=prefix)
@@ -115,11 +126,16 @@ def create_app() -> FastAPI:
     app.include_router(integrations.router, prefix=prefix)
     app.include_router(templates.router, prefix=prefix)
     app.include_router(knowledge.router, prefix=prefix)
+    app.include_router(memory.router, prefix=prefix)
     app.include_router(preferences.router, prefix=prefix)
     app.include_router(reports.router, prefix=prefix)
     app.include_router(deadlines.router, prefix=prefix)
+    app.include_router(decisions.router, prefix=prefix)
     app.include_router(activity.router, prefix=prefix)
     app.include_router(search.router, prefix=prefix)
+    app.include_router(verification.router, prefix=prefix)
+    app.include_router(weighting.router, prefix=prefix)
+    app.include_router(governance.router, prefix=prefix)
 
     # ── Health / Ready / Metrics ─────────────────────────────────────────
 

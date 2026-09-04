@@ -106,6 +106,11 @@ class BBox(CamelModel):
 class Citation(CamelModel):
     id: str
     page: int
+    #: Which document in the package. Page numbers restart per document, so a
+    #: citation is only unambiguous with this beside it. Empty for analyses
+    #: read before packages existed.
+    document_id: str = ""
+    document_name: str = ""
     section: str
     quote: str
     bbox: BBox
@@ -240,6 +245,19 @@ class ResearchSource(CamelModel):
     site: str = ""
 
 
+class ResearchClaim(CamelModel):
+    """One paragraph of the research report, with the pages that back it.
+
+    ``sources`` is empty when the search tool cited nothing for this
+    paragraph. That is shown as-is: an unattributed claim borrowing the
+    neighbouring paragraph's citation would be the same lie the whole
+    research tab exists to prevent.
+    """
+
+    text: str
+    sources: list[str] = []
+
+
 class ExternalResearch(CamelModel):
     """What the open web said, kept separate from what the document says.
 
@@ -254,7 +272,127 @@ class ExternalResearch(CamelModel):
     query: str = ""
     summary: str = ""
     sources: list[ResearchSource] = []
+    #: The report broken into paragraphs, each carrying the URLs that back it.
+    claims: list[ResearchClaim] = []
     at: str | None = None
+
+
+class CoverageTotals(CamelModel):
+    """Counted, never estimated. Every field is a tally of chunks or pages."""
+
+    documents: int = 0
+    empty_documents: int = 0
+    pages: int = 0
+    pages_scanned: int = 0
+    pages_analysed: int = 0
+    chunks: int = 0
+    chunks_analysed: int = 0
+    chunks_scanned: int = 0
+    chunks_unreached: int = 0
+
+
+class CoverageDocument(CamelModel):
+    """One document's line in the ledger.
+
+    `state` is the document's worst case, not its average: a document with a
+    single unreached passage reads `unreached`, and one that produced no text
+    at all reads `no_text` with a note saying so.
+    """
+
+    document_id: str = ""
+    name: str = ""
+    kind: str = "base"
+    pages: int = 0
+    state: str = "scanned"  # analysed | scanned | no_text | unreached
+    pages_analysed: int = 0
+    chunks: int = 0
+    chunks_analysed: int = 0
+    chunks_unreached: int = 0
+    #: Contiguous page runs no pass reached, as [start, end] pairs.
+    unreached_pages: list[list[int]] = []
+    note: str = ""
+
+
+class Coverage(CamelModel):
+    """The proof behind "nothing was missed".
+
+    Two numbers rather than one: everything the deterministic sweep visited
+    (`pagesScanned`) and the narrower set a specialist actually reasoned over
+    (`pagesAnalysed`). Collapsing them into a single percentage is what makes a
+    coverage claim dishonest, so the shape refuses to.
+    """
+
+    at: str | None = None
+    totals: CoverageTotals = CoverageTotals()
+    documents: list[CoverageDocument] = []
+    #: Specialist id → how many chunks it had in context.
+    by_agent: dict[str, int] = {}
+    #: Every passage reached and every document readable.
+    complete: bool = False
+
+
+class LedgerDelta(CamelModel):
+    """What the last run did to the Requirement Ledger.
+
+    A requirement the newest read stopped finding is not deleted, and this is
+    where that shows up. `removedWithWork` names the ones somebody had already
+    assigned or drafted against — those need a person, not a counter.
+    """
+
+    added: int = 0
+    updated: int = 0
+    unchanged: int = 0
+    removed: int = 0
+    removed_with_work: list[str] = []
+    #: Answers already written against wording an amendment has since replaced.
+    #: Named rather than counted: each one is a section somebody has to revisit.
+    invalidated: list[str] = []
+
+
+class ResponseSummary(CamelModel):
+    """Counts from the last check of the bound response.
+
+    `cleared` is deliberately smaller than the satisfied count: a mandatory
+    requirement a rule or a model called satisfied is a recommendation until a
+    person signs it, and conflating the two is how a response ships with a gap.
+    """
+
+    total: int = 0
+    counts: dict[str, int] = {}
+    cleared: int = 0
+    awaiting_confirmation: int = 0
+    blocking: int = 0
+    blocking_references: list[str] = []
+
+
+class ResponseBinding(CamelModel):
+    """The draft response bound to this solicitation.
+
+    A response is a separately versioned corpus compared *against* the
+    solicitation, never mixed into it. Each draft is its own version so an
+    earlier check stays answerable.
+    """
+
+    document_id: str = ""
+    file_name: str = ""
+    label: str = ""
+    version: int = 0
+    bound_at: str | None = None
+    #: When it was last checked. Null between binding and the first check.
+    at: str | None = None
+    summary: ResponseSummary = ResponseSummary()
+
+
+class ContradictionSummary(CamelModel):
+    """What the last run found that cannot both be met.
+
+    `found` is the count on the current read, not a running total: a
+    contradiction an amendment resolved should stop being counted.
+    """
+
+    found: int = 0
+    added: int = 0
+    closed: int = 0
 
 
 class FileNode(CamelModel):

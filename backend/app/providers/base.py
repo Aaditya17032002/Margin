@@ -62,6 +62,10 @@ class ResearchResult:
     """
     findings: list[dict] = field(default_factory=list)
     sources: list[dict] = field(default_factory=list)
+    #: One entry per paragraph of the report: ``{"text", "sources": [url, ...]}``.
+    #: A paragraph the search tool cited nothing for keeps an empty list, so
+    #: "unattributed" stays visible instead of borrowing a neighbour's source.
+    claims: list[dict] = field(default_factory=list)
     query_used: str = ""
     status: str = "completed"  # completed | skipped | rate_limited | failed | timeout
     detail: str = ""

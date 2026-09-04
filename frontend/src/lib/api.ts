@@ -13,22 +13,46 @@ import type {
   ActivityEntry,
   Analysis,
   AnalysisMode,
+  Contradiction,
+  CriticalPath,
+  DecisionEvidence,
+  DecisionRecord,
   AppNotification,
   DocType,
   ExportRecord,
-  FileNode,
+  GoNoGo,
+  RemoteEntry,
   Integration,
   IntegrationId,
   MatrixRow,
   MatrixStatus,
   Org,
   PastBid,
+  PastPerformanceMatch,
+  ContentSuggestion,
   Prefs,
   QAQuestion,
+  ResponseCheck,
+  VerificationBasis,
+  ReviewColour,
+  ReviewFinding,
+  ReviewRound,
+  ReviewVerdict,
+  ReviewComparison,
+  FindingSeverity,
+  PermissionModel,
+  RetentionView,
+  PiiScan,
   Role,
   SessionUser,
   Template,
   TeamMember,
+  AuditEntry,
+  VerificationCorpus,
+  VerificationQueue,
+  WeightingLens,
+  WhiteGloveItem,
+  WorkItem,
 } from "@/types";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
@@ -125,6 +149,32 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
 }
+
+/**
+ * The same request, returning the body as text.
+ *
+ * For endpoints that answer with a file rather than JSON. It shares the auth
+ * and refresh behaviour so a download does not become the one call that
+ * silently fails after an hour.
+ */
+export async function apiText(path: string, options: ApiOptions = {}): Promise<string> {
+  const { auth = true, headers, body: _body, ...rest } = options;
+  const reqHeaders = new Headers(headers);
+  if (auth) {
+    const token = getAccessToken();
+    if (token) reqHeaders.set("Authorization", `Bearer ${token}`);
+  }
+
+  let res = await fetch(url(path), { ...rest, headers: reqHeaders });
+  if (res.status === 401 && auth && (await tryRefresh())) {
+    const retryHeaders = new Headers(reqHeaders);
+    retryHeaders.set("Authorization", `Bearer ${getAccessToken()}`);
+    res = await fetch(url(path), { ...rest, headers: retryHeaders });
+  }
+  if (!res.ok) throw await parseError(res);
+  return res.text();
+}
+
 
 async function tryRefresh(): Promise<boolean> {
   const refresh = getRefreshToken();
@@ -252,6 +302,299 @@ export const matrixApi = {
       method: "POST",
       body: { ids, ...patch },
     }),
+
+  /**
+   * The matrix as a spreadsheet, with the citation on every row.
+   *
+   * Fetched rather than linked: the endpoint needs the bearer token, and a
+   * plain anchor would not carry it. The CSV text comes back and the caller
+   * saves it.
+   */
+  exportCsv: (analysisId: string, opts: { redact?: boolean } = {}) =>
+    apiText(
+      `/api/v1/analyses/${analysisId}/matrix/export${opts.redact ? "?redact=true" : ""}`,
+    ),
+};
+
+/* ------------------------------------------------------------------ */
+/* Accountability and the record                                        */
+/* ------------------------------------------------------------------ */
+
+export const governanceApi = {
+  /** Outstanding requirements, across every live pursuit, due date first. */
+  work: (owner?: string) =>
+    api<{ items: WorkItem[]; summary: { total: number; overdue: number; unscheduled: number } }>(
+      `/api/v1/work${owner ? `?owner=${encodeURIComponent(owner)}` : ""}`,
+    ),
+
+  /** Everything that happened to this analysis, newest first. */
+  audit: (analysisId: string) =>
+    api<{ entries: AuditEntry[]; total: number }>(`/api/v1/analyses/${analysisId}/audit`),
+
+  /**
+   * The audit trail as a spreadsheet, oldest first.
+   *
+   * Fetched rather than linked, like every other export: the endpoint needs
+   * the bearer token and a plain anchor would not carry it.
+   */
+  auditCsv: (analysisId: string) => apiText(`/api/v1/analyses/${analysisId}/audit/export`),
+
+  /** Who can do what, and what the signed-in person in particular can do. */
+  permissions: () => api<PermissionModel>("/api/v1/governance/permissions"),
+
+  /** The retention policy, and exactly what it would dispose of today. */
+  retention: () => api<RetentionView>("/api/v1/governance/retention"),
+
+  /** Change the policy. Refused with every problem at once, not the first. */
+  setRetention: (body: Partial<{
+    enabled: boolean;
+    sourceDocumentsDays: number;
+    extractedTextDays: number;
+    responseDraftsDays: number;
+    minimumHoldDays: number;
+  }>) => api<RetentionView>("/api/v1/governance/retention", { method: "PUT", body }),
+
+  /**
+   * Actually dispose. `confirm` is the number of items the caller saw in the
+   * preview — if the world moved in between, the disposal is refused rather
+   * than run against a set nobody looked at.
+   */
+  applyRetention: (confirm: number, note = "") =>
+    api<{ disposed: unknown[]; count: number; at: string }>(
+      "/api/v1/governance/retention/apply",
+      { method: "POST", body: { confirm, note } },
+    ),
+
+  /** Put a pursuit out of reach of every retention timer, or let it back in. */
+  legalHold: (analysisId: string, hold: boolean, reason = "") =>
+    api<{ analysisId: string; legalHold: boolean; reason: string | null }>(
+      `/api/v1/analyses/${analysisId}/legal-hold`,
+      { method: "POST", body: { hold, reason } },
+    ),
+
+  /** What in this package looks like personal data, and where. */
+  pii: (analysisId: string) => api<PiiScan>(`/api/v1/analyses/${analysisId}/pii`),
+};
+
+/* ------------------------------------------------------------------ */
+/* Response traceability                                                */
+/* ------------------------------------------------------------------ */
+
+export const responseApi = {
+  /**
+   * Bind a draft response to this solicitation and check it.
+   *
+   * Refused with 409 until the solicitation has been read: without a
+   * Requirement Ledger there is nothing to trace against, and a gap report
+   * built on no requirements would show a clean sheet.
+   */
+  bind: (analysisId: string, file: File, label = "") => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("label", label);
+    return api<{ document: { id: string; fileName: string }; version: number; jobId: string }>(
+      `/api/v1/analyses/${analysisId}/response`,
+      { method: "POST", body: form },
+    );
+  },
+
+  recheck: (analysisId: string) =>
+    api<{ jobId: string; status: string }>(`/api/v1/analyses/${analysisId}/response/recheck`, {
+      method: "POST",
+    }),
+
+  checks: (analysisId: string, version?: number) =>
+    api<ResponseCheck[]>(
+      `/api/v1/analyses/${analysisId}/response/checks${version ? `?version=${version}` : ""}`,
+    ),
+
+  decide: (
+    analysisId: string,
+    checkId: string,
+    patch: {
+      status?: ResponseCheck["status"];
+      confirmed?: boolean;
+      note?: string;
+      /** How you satisfied yourself. Recorded as evidence, not decoration. */
+      basis?: VerificationBasis;
+      basisDetail?: string;
+    },
+  ) =>
+    api<ResponseCheck>(`/api/v1/analyses/${analysisId}/response/checks/${checkId}`, {
+      method: "PATCH",
+      body: patch,
+    }),
+};
+
+/* ------------------------------------------------------------------ */
+/* Contradictions                                                       */
+/* ------------------------------------------------------------------ */
+
+export const contradictionsApi = {
+  list: (analysisId: string, includeResolved = false) =>
+    api<Contradiction[]>(
+      `/api/v1/analyses/${analysisId}/contradictions${includeResolved ? "?includeResolved=true" : ""}`,
+    ),
+
+  /**
+   * Record which requirement governs. Resolving supersedes the other in the
+   * ledger, so the losing clause stops reading as live work while staying
+   * answerable about what happened to it.
+   */
+  resolve: (
+    analysisId: string,
+    contradictionId: string,
+    body: { outcome: "resolved" | "disputed" | "dismissed"; governsId?: string; resolution: string },
+  ) =>
+    api<Contradiction & { superseded: string | null }>(
+      `/api/v1/analyses/${analysisId}/contradictions/${contradictionId}/resolve`,
+      { method: "POST", body },
+    ),
+};
+
+/* ------------------------------------------------------------------ */
+/* Colour-team reviews                                                  */
+/* ------------------------------------------------------------------ */
+
+export const reviewsApi = {
+  list: (analysisId: string) =>
+    api<{ charters: Record<ReviewColour, string>; rounds: ReviewRound[] }>(
+      `/api/v1/analyses/${analysisId}/reviews`,
+    ),
+
+  /** Opens against the currently bound draft. Refused when none is bound. */
+  open: (analysisId: string, body: { colour: ReviewColour; charter?: string; reviewers?: string[] }) =>
+    api<ReviewRound>(`/api/v1/analyses/${analysisId}/reviews`, { method: "POST", body }),
+
+  raise: (
+    analysisId: string,
+    roundId: string,
+    body: { text: string; severity?: FindingSeverity; location?: string; requirementId?: string },
+  ) =>
+    api<ReviewFinding>(`/api/v1/analyses/${analysisId}/reviews/${roundId}/findings`, {
+      method: "POST",
+      body,
+    }),
+
+  resolve: (
+    analysisId: string,
+    roundId: string,
+    findingId: string,
+    patch: Partial<Pick<ReviewFinding, "text" | "severity" | "location" | "state" | "resolution">>,
+  ) =>
+    api<ReviewFinding>(
+      `/api/v1/analyses/${analysisId}/reviews/${roundId}/findings/${findingId}`,
+      { method: "PATCH", body: patch },
+    ),
+
+  /**
+   * Sign the round off. Refused with 409 while must-fix findings are open,
+   * unless `overrideReason` is supplied — which is recorded as an override
+   * rather than as a pass.
+   */
+  close: (
+    analysisId: string,
+    roundId: string,
+    body: { verdict: ReviewVerdict; note?: string; overrideReason?: string },
+  ) =>
+    api<ReviewRound>(`/api/v1/analyses/${analysisId}/reviews/${roundId}/close`, {
+      method: "POST",
+      body,
+    }),
+
+  /** Everything the mechanical rules could not check from extracted text. */
+  checklist: (analysisId: string, roundId: string) =>
+    api<{ roundId: string; responseVersion: number; items: WhiteGloveItem[] }>(
+      `/api/v1/analyses/${analysisId}/reviews/${roundId}/checklist`,
+    ),
+
+  /**
+   * The rounds read against each other rather than one at a time: what came
+   * back after somebody said it was fixed, what a closed round left open, and
+   * whether a sign-off still covers the draft about to be submitted.
+   */
+  comparison: (analysisId: string) =>
+    api<ReviewComparison>(`/api/v1/analyses/${analysisId}/reviews/comparison`),
+};
+
+/* ------------------------------------------------------------------ */
+/* Verification queue                                                   */
+/* ------------------------------------------------------------------ */
+
+export const decisionApi = {
+  /** What is known right now, in the shape a decision record freezes. */
+  evidence: (analysisId: string) =>
+    api<DecisionEvidence>(`/api/v1/analyses/${analysisId}/decision/evidence`),
+
+  history: (analysisId: string) =>
+    api<DecisionRecord[]>(`/api/v1/analyses/${analysisId}/decision`),
+
+  /** Records the decision with the evidence frozen as it stood. */
+  record: (
+    analysisId: string,
+    body: { decision: GoNoGo; rationale: string; participants?: string[]; acknowledged?: string[] },
+  ) => api<DecisionRecord>(`/api/v1/analyses/${analysisId}/decision`, { method: "POST", body }),
+
+  /** What actually happened. The half that makes the record worth keeping. */
+  outcome: (analysisId: string, recordId: string, body: { outcome: DecisionRecord["outcome"]; note?: string }) =>
+    api<DecisionRecord>(`/api/v1/analyses/${analysisId}/decision/${recordId}`, {
+      method: "PATCH",
+      body,
+    }),
+
+  path: (analysisId: string) => api<CriticalPath>(`/api/v1/analyses/${analysisId}/critical-path`),
+};
+
+export const memoryApi = {
+  /**
+   * Which of our contracts is relevant to this requirement, and why. Every
+   * signal comes back separately so a proposal can make the case rather than
+   * assert a number.
+   */
+  pastPerformance: (analysisId: string, requirementId: string) =>
+    api<PastPerformanceMatch[]>(
+      `/api/v1/analyses/${analysisId}/requirements/${requirementId}/past-performance`,
+    ),
+
+  /**
+   * Text that answered something like this before, with what happened to it.
+   * Retired blocks are never returned.
+   */
+  content: (analysisId: string, requirementId: string) =>
+    api<ContentSuggestion[]>(
+      `/api/v1/analyses/${analysisId}/requirements/${requirementId}/content`,
+    ),
+
+  /** Records that a block went into a response. */
+  useBlock: (blockId: string) =>
+    api<unknown>(`/api/v1/content-blocks/${blockId}`, { method: "PATCH", body: { used: true } }),
+};
+
+export const weightingApi = {
+  /**
+   * Section M against the ledger against the response. Derived on every
+   * request, so closing a gap moves the lens immediately.
+   */
+  lens: (analysisId: string) => api<WeightingLens>(`/api/v1/analyses/${analysisId}/weighting`),
+};
+
+export const verificationApi = {
+  /**
+   * Everything in this analysis that needs a person. Derived on read, so an
+   * item disappears the moment the thing it was about is settled.
+   */
+  queue: (analysisId: string) =>
+    api<VerificationQueue>(`/api/v1/analyses/${analysisId}/verification`),
+
+  /**
+   * Where the machine and the people using it disagree, across every analysis
+   * or within one. Built from recorded judgements, so it is only as good as
+   * how much reviewing has actually happened.
+   */
+  corpus: (analysisId?: string) =>
+    api<VerificationCorpus>(
+      `/api/v1/verification/corpus${analysisId ? `?analysis_id=${analysisId}` : ""}`,
+    ),
 };
 
 /* ------------------------------------------------------------------ */
@@ -278,6 +621,33 @@ export const questionsApi = {
       method: "PATCH",
       body: { orderedIds },
     }),
+
+  /**
+   * Record what the agency said back.
+   *
+   * Returns the requirements whose answers were reopened by it: a section
+   * written before a clarification is not an answer to the clarified clause.
+   */
+  answer: (
+    analysisId: string,
+    questionId: string,
+    body: {
+      answer: string;
+      source?: string;
+      /**
+       * What the answer did to the requirement. An answer that explains a
+       * clause and one that rewrites it call for completely different work,
+       * and only the person reading it can say which this is.
+       */
+      effect?: "clarified" | "amended" | "withdrawn";
+      /** Required when `effect` is `amended`. */
+      revisedRequirement?: string;
+    },
+  ) =>
+    api<QAQuestion & { reopened: string[]; superseded: string | null; withdrawn: string | null }>(
+      `/api/v1/analyses/${analysisId}/questions/${questionId}/answer`,
+      { method: "POST", body },
+    ),
 };
 
 /* ------------------------------------------------------------------ */
@@ -360,7 +730,11 @@ export const integrationsApi = {
   disconnect: (id: IntegrationId) =>
     api<Integration>(`/api/v1/integrations/${id}/disconnect`, { method: "DELETE" }),
 
-  files: (id: IntegrationId) => api<FileNode[]>(`/api/v1/integrations/${id}/files`),
+  /** One level of a connected source. `path` is a token this API issued. */
+  browse: (id: IntegrationId, path = "") =>
+    api<{ provider: string; path: string; entries: RemoteEntry[] }>(
+      `/api/v1/integrations/${id}/browse${path ? `?path=${encodeURIComponent(path)}` : ""}`,
+    ),
 
   import: (id: IntegrationId, fileIds: string[], analysisId?: string) =>
     api<{ imported: number; results: { fileId: string; analysisId?: string; error?: string }[] }>(

@@ -1,0 +1,79 @@
+{
+  "name": "Federal RFP — Sections A through M",
+  "source": "synthetic",
+  "notes": "Modelled on a uniform-contract-format federal solicitation: SF-33 cover, FAR/DFARS clauses, Section L instructions with page and format limits, Section M weighted factors. Written by hand for this harness. Replace with real labelled solicitations as they become available — the format is unchanged.",
+  "exhaustive": ["limit", "form", "clause", "evaluation", "date"],
+  "expected": {
+    "limit": [
+      { "page": 3, "quote": "shall not exceed 40 pages" },
+      { "page": 3, "quote": "12-point" },
+      { "page": 3, "quote": "Times New Roman" },
+      { "page": 3, "quote": "1-inch margins" },
+      { "page": 3, "quote": "single-spaced" },
+      { "page": 3, "quote": "File names shall follow the convention" }
+    ],
+    "form": [
+      { "page": 1, "quote": "Standard Form 33" },
+      { "page": 3, "quote": "Standard Form 33" },
+      { "page": 3, "quote": "Attachment J-1" }
+    ],
+    "clause": [
+      { "page": 2, "quote": "FAR 52.204-7" },
+      { "page": 2, "quote": "FAR 52.219-14" },
+      { "page": 3, "quote": "DFARS 252.204-7012" },
+      { "page": 3, "quote": "FAR 52.204-8" },
+      { "page": 1, "quote": "SECTION A" },
+      { "page": 1, "quote": "SECTION B" },
+      { "page": 2, "quote": "SECTION C" },
+      { "page": 2, "quote": "SECTION E" },
+      { "page": 2, "quote": "SECTION H" },
+      { "page": 2, "quote": "SECTION I" },
+      { "page": 3, "quote": "SECTION K" },
+      { "page": 3, "quote": "SECTION L" },
+      { "page": 4, "quote": "SECTION M" }
+    ],
+    "certification": [
+      { "page": 3, "quote": "representations and certifications" },
+      { "page": 3, "quote": "must certify that it is not debarred" }
+    ],
+    "obligation": [
+      { "page": 2, "quote": "The Contractor shall provide enterprise systems integration services" },
+      { "page": 2, "quote": "The Contractor shall maintain a Quality Control Plan" },
+      { "page": 2, "quote": "may not export, process, access or store Government Data" },
+      { "page": 2, "quote": "shall not be replaced without the Contracting Officer" },
+      { "page": 3, "quote": "Offerors shall complete the representations and certifications" },
+      { "page": 3, "quote": "Proposals shall be submitted in two separately bound volumes" },
+      { "page": 3, "quote": "Text shall be 12-point Times New Roman" },
+      { "page": 3, "quote": "Proposals shall be submitted electronically" },
+      { "page": 3, "quote": "File names shall follow the convention" }
+    ],
+    "instruction": [
+      { "page": 3, "quote": "Offerors must submit a completed Standard Form 33" },
+      { "page": 3, "quote": "Proposals shall be submitted electronically" },
+      { "page": 4, "quote": "Provide three references for contracts of similar scope" }
+    ],
+    "date": [
+      { "page": 1, "quote": "June 1, 2026" },
+      { "page": 1, "quote": "May 14, 2026" },
+      { "page": 4, "quote": "August 15, 2026" }
+    ],
+    "evaluation": [
+      { "page": 4, "quote": "Basis for award" },
+      { "page": 4, "quote": "best value trade-off" },
+      { "page": 4, "quote": "Evaluation Factor 1" },
+      { "page": 4, "quote": "Evaluation Factor 2" },
+      { "page": 4, "quote": "Evaluation Factor 3" },
+      { "page": 4, "quote": "weighted 40 percent" },
+      { "page": 4, "quote": "weighted 30 percent" },
+      { "page": 4, "quote": "significantly more important" }
+    ],
+    "cross_reference": [
+      { "page": 3, "quote": "as described in Section M" }
+    ],
+    "volume": [
+      { "page": 3, "quote": "separately bound" },
+      { "page": 3, "quote": "Volume I" },
+      { "page": 3, "quote": "Volume II" }
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "Attachments — wage determination, reps and certs, security",
+  "source": "synthetic",
+  "notes": "The content that lives past the base document and used to be invisible: attachments were stored and filtered out of every run. Short, dense, and heavy on certifications and clause references — the categories most likely to carry a disqualification.",
+  "exhaustive": ["form", "clause", "certification"],
+  "expected": {
+    "form": [
+      { "page": 1, "quote": "Wage Determination" },
+      { "page": 1, "quote": "Attachment J-1" },
+      { "page": 1, "quote": "Attachment K-1" },
+      { "page": 2, "quote": "Attachment L-2" }
+    ],
+    "clause": [
+      { "page": 2, "quote": "FAR 52.204-8" },
+      { "page": 2, "quote": "FAR 52.209-5" },
+      { "page": 3, "quote": "DFARS 252.204-7012" },
+      { "page": 3, "quote": "Section H" }
+    ],
+    "certification": [
+      { "page": 2, "quote": "representations and certifications" },
+      { "page": 2, "quote": "must certify that it is not debarred" },
+      { "page": 2, "quote": "certifies that it has an active registration in SAM.gov" },
+      { "page": 2, "quote": "This certification is a material representation of fact" }
+    ],
+    "obligation": [
+      { "page": 1, "quote": "The Contractor shall pay not less than the prevailing wage rates" },
+      { "page": 1, "quote": "The Contractor shall submit certified payrolls" },
+      { "page": 1, "quote": "The Contractor is required to post the wage determination" },
+      { "page": 2, "quote": "The Offeror shall complete the representations and certifications" },
+      { "page": 2, "quote": "The Offeror must certify that it is not debarred" },
+      { "page": 2, "quote": "The Offeror shall represent whether it is a small business" },
+      { "page": 3, "quote": "Personnel shall hold a Secret Facility Clearance" },
+      { "page": 3, "quote": "The Contractor may not subcontract any portion of this work" },
+      { "page": 3, "quote": "All deliverables shall be encrypted" },
+      { "page": 3, "quote": "Incidents shall be reported within 72 hours" }
+    ],
+    "cross_reference": [
+      { "page": 3, "quote": "as described in Section H" }
+    ]
+  }
+}

@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 
+from app.core import permissions
 from app.core.deps import CurrentUser, DbSession, RedisClient
 from app.core.queue import enqueue
 from app.db.models.analysis import Analysis
@@ -17,6 +18,12 @@ from app.db.models.report import Report
 from app.schemas.resources import ReportGenerateRequest, ReportResponse
 
 router = APIRouter(tags=["reports"])
+
+MEDIA_TYPES = {
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "pdf": "application/pdf",
+    "md": "text/markdown; charset=utf-8",
+}
 
 
 def _to_response(r: Report) -> dict:
@@ -41,6 +48,10 @@ async def generate_report(
     db: DbSession,
     redis: RedisClient,
 ):
+    # A report leaves the product. Whoever can generate one can hand the
+    # package's contents to anybody, which is a different authority from being
+    # able to read it here.
+    permissions.require(user.role, "export")
     result = await db.execute(
         select(Analysis).where(Analysis.id == analysis_id, Analysis.org_id == user.org_id, Analysis.deleted_at.is_(None))
     )
@@ -106,10 +117,14 @@ async def download_report(report_id: str, user: CurrentUser, db: DbSession):
             detail="The rendered file is no longer on disk. Generate the report again.",
         )
 
+    # The extension and type come from the file that was actually rendered.
+    # Serving a Markdown report as a .docx made the browser hand it to Word,
+    # which then refused to open it.
+    suffix = os.path.splitext(report.storage_path)[1].lstrip(".").lower() or "docx"
     return FileResponse(
         report.storage_path,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename=f"{report.analysis_title} - {report.template_name}.docx",
+        media_type=MEDIA_TYPES.get(suffix, "application/octet-stream"),
+        filename=f"{report.analysis_title} - {report.template_name}.{suffix}",
     )
 
 

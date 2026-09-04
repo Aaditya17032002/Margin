@@ -37,7 +37,11 @@ export function PanelHeader({
   title: React.ReactNode;
   description?: React.ReactNode;
   actions?: React.ReactNode;
-} & React.HTMLAttributes<HTMLDivElement>) {
+  // `title` on a DOM element is a string tooltip, and intersecting it with
+  // ReactNode narrowed this prop to `ReactNode & string` — so a header could
+  // only ever be given plain text, silently, and only at the call site that
+  // tried something else.
+} & Omit<React.HTMLAttributes<HTMLDivElement>, "title">) {
   return (
     <div
       className={cn("flex items-start justify-between gap-4 border-b border-line px-5 py-4", className)}

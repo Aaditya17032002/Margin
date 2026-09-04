@@ -58,3 +58,23 @@ export function titleCase(value: string) {
 export function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
+
+
+/**
+ * Hand the browser a file the app already has in memory.
+ *
+ * Used for exports the API returns as text: the object URL is revoked on the
+ * next tick, because leaving them alive holds the whole file in memory for as
+ * long as the tab is open.
+ */
+export function saveTextFile(name: string, contents: string, type = "text/csv") {
+  const blob = new Blob([contents], { type: `${type};charset=utf-8` });
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(href), 0);
+}

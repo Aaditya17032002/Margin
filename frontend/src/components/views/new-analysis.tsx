@@ -113,7 +113,7 @@ export function NewAnalysisView() {
                 <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
                   <span className="text-sm text-ink-soft">Or import from</span>
                   {connected.map((integration) => (
-                    <Button key={integration.id} variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
+                    <Button key={integration.id} variant="secondary" size="sm" onClick={() => setImportOpen(true, integration.id)}>
                       {integration.id === "outlook" ? <Mail /> : <FolderOpen />}
                       {integration.name}
                     </Button>

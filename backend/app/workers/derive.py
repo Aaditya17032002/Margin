@@ -71,25 +71,6 @@ def gates(findings: list[dict]) -> list[dict]:
     ]
 
 
-def matrix_rows(findings: list[dict]) -> list[dict]:
-    """Compliance clauses become unassigned matrix rows for the capture team."""
-    rows = []
-    for f in findings:
-        citation = f.get("citation") or {}
-        value = f.get("value", "")
-        rows.append(
-            {
-                "reference": citation.get("section") or f.get("label", "Unreferenced"),
-                "requirement": f"{f.get('label', '')}: {value}".strip(": "),
-                "type": "shall" if f.get("stakes") == "disqualifying" else "should",
-                "stakes": f.get("stakes", "scored"),
-                "citation": citation,
-                "note": f.get("detail") or None,
-            }
-        )
-    return rows
-
-
 def questions(findings: list[dict]) -> list[dict]:
     """The Q&A agent already emits question-shaped records; normalise the keys."""
     normalised = []

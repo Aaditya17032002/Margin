@@ -13,57 +13,77 @@ import { notify } from "@/components/ui/toaster";
 import { SHORTCUT_GROUPS } from "@/components/shell/shortcuts";
 import { useUIStore } from "@/stores/ui";
 
+/**
+ * Entry points into the manual, not a separate set of documents.
+ *
+ * The previous list pointed at product screens and called them guides, which
+ * meant the answer to "how does this work" was "here is the thing you already
+ * could not understand". Each of these lands on the paragraph that explains it.
+ */
 const GUIDES = [
   {
     title: "Reading your first solicitation",
-    blurb: "Upload a document, choose a mode, and watch the read happen in the open.",
+    blurb: "Attach the package, choose a mode, and know which two screens to open first.",
     minutes: "4 min",
-    href: "/app/analyses/new",
+    href: "/app/manual?s=first-read",
   },
   {
-    title: "Working the compliance matrix",
-    blurb: "Assign owners, point each requirement at a response location, and export.",
-    minutes: "6 min",
-    href: "/app/matrix",
-  },
-  {
-    title: "Deciding go or no-go",
-    blurb: "How the four gates are scored, and what the gauge is actually telling you.",
+    title: "What Margin counts, and what it judges",
+    blurb:
+      "Page limits and fonts are decided in code. Everything else is a draft assessment waiting for a person.",
     minutes: "5 min",
-    href: "/app/analyses",
+    href: "/app/manual?s=mechanical",
   },
   {
-    title: "Sending questions to an agency",
-    blurb: "Turn the SILENT ledger into a ranked question set and send it through Outlook.",
+    title: "Checking a draft response",
+    blurb: "Bind a draft, read the gap, and understand why so much comes back unverifiable.",
+    minutes: "5 min",
+    href: "/app/manual?s=response-gap",
+  },
+  {
+    title: "Personal data and redacted exports",
+    blurb: "What is detected, what masking does, and why it is not the default.",
     minutes: "3 min",
-    href: "/app/analyses",
+    href: "/app/manual?s=pii",
   },
 ];
 
 const FAQ = [
   {
     q: "Where does a finding come from?",
-    a: "Every finding carries a citation — a page, a section, and the quoted line underneath. Hover that source block and the Margin rail opens on the right with the clause highlighted. Nothing is asserted without one.",
+    a: "Every finding carries a citation — a document, a page, a section and the quoted line. Hover the source block and the Margin rail opens on the right with the clause highlighted. Nothing is asserted without one, and a quote that cannot be found in the package is treated as an extraction failure rather than as evidence.",
   },
   {
-    q: "What does the confidence level mean?",
-    a: "Confidence is drawn as ink saturation rather than a percentage badge. Anything below the review threshold is marked with a quill and lands in the review queue on the dashboard, because a person should confirm it before it reaches a proposal.",
+    q: "What is the difference between scanned and analysed?",
+    a: "Scanned means a page was extracted and pattern-swept. Analysed means the specialists read it in depth. Coverage reports both because a single completeness number would overstate the reading — and it separately reports pages nothing could be read from at all, such as an image-only PDF.",
+  },
+  {
+    q: "Why does so much come back “unverifiable”?",
+    a: "Unverifiable means nobody has been able to check it yet — not that it failed. A wrong “satisfied” on a mandatory requirement loses a bid nobody saw coming; a wrong “unverifiable” costs somebody five minutes. Given that asymmetry, every ambiguous case is pushed to unverifiable on purpose.",
+  },
+  {
+    q: "Will Margin ever mark a mandatory requirement as done?",
+    a: "No. A satisfied result on a disqualifying requirement is recorded as a recommendation that needs confirmation, and it stays in the Needs You queue until a person with the authority to clear it signs it off — with their name, the basis, and the verdict it replaced.",
   },
   {
     q: "What is the SILENT ledger?",
-    a: "It is the record of what the document did not say. Missing page limits, unnamed incumbents, ceilings that are implied but never stated. Each entry converts into an agency question in one click.",
-  },
-  {
-    q: "How is the go/no-go score calculated?",
-    a: "Four gates are weighted: hard gates can fail the bid outright, soft gates shade the verdict. The gauge shows the resulting position, and recording a decision stamps it with the date, the person, and the note you wrote.",
+    a: "The record of what the document did not say: missing page limits, unnamed incumbents, ceilings that are implied but never stated. Each entry converts into an agency question in one click, and when the answer comes back it reopens only the requirements and response sections that answer actually touched.",
   },
   {
     q: "Does Margin store our documents?",
-    a: "No. Documents are read in place from SharePoint, OneDrive, or the upload you provide. What is stored is the analysis: findings, requirements, and the citations that point back at your copy.",
+    a: "Yes — the uploaded file and the text extracted from it are stored with the analysis, because a run must not depend on the system that delivered the bytes still holding them. How long they are kept is a workspace retention policy an admin sets, and disposal never touches the record of what was decided: the ledger, verdicts, sign-offs and audit trail are out of scope on any policy.",
+  },
+  {
+    q: "Can Margin redact personal data before we send something out?",
+    a: "It finds what looks like personal data by pattern — identifiers, email addresses, phone numbers, dates of birth, bank details — and can export a redacted copy of the matrix with each replacement naming what it was. It never edits your documents, and masking is not the default because redacting an address out of a quoted clause would make the quote wrong.",
   },
   {
     q: "What happens when a solicitation is amended?",
-    a: "Run an Amendment Refresh. Margin re-reads only what moved and shows a diff of added, changed, and removed language, flagging anything that invalidates work already assigned.",
+    a: "Attach the amendment. Margin folds it into the package, pairs each change against the clause it changes, and proposes what now governs — proposes, never applies. Work already assigned against a superseded clause is flagged rather than silently rewritten.",
+  },
+  {
+    q: "Why was I refused an action?",
+    a: "Permissions are named after the decision they govern, so signing off a review and resolving a contradiction are separate authorities. The refusal names the roles that have it and what your own role is for. The whole matrix is in Settings → Permissions, including what you cannot do.",
   },
 ];
 
@@ -86,8 +106,8 @@ export function HelpView() {
     <div className="mx-auto max-w-4xl space-y-6">
       <PageHeader
         eyebrow="Help"
-        title="How Margin works"
-        description="Short answers, the keyboard reference, and a way to reach a person."
+        title="Help & shortcuts"
+        description="Short answers, the keyboard reference, and a way to reach a person. The long form is in the manual."
       />
 
       <SearchField
@@ -137,7 +157,10 @@ export function HelpView() {
 
       {faqs.length > 0 ? (
         <Panel>
-          <PanelHeader title="Questions we get asked" />
+          <PanelHeader
+            title="Questions we get asked"
+            description="Longer answers, and the vocabulary behind them, are in the manual."
+          />
           <div className="px-5">
             <Accordion type="single" collapsible>
               {faqs.map((item) => (
@@ -207,8 +230,11 @@ export function HelpView() {
             <BookOpen />
             Command palette
           </Button>
-          <Button asChild variant="ghost">
-            <Link href="/style">Design system</Link>
+          <Button asChild variant="secondary">
+            <Link href="/app/manual">
+              <BookOpen />
+              Read the manual
+            </Link>
           </Button>
           <Button variant="primary" onClick={() => notify.success("Message sent. We reply within a day.")}>
             <MessageSquare />

@@ -1,0 +1,356 @@
+{
+  "_note": "One requirement, one response, one expected verdict. These are the rules that decide compliance without a model, so the corpus is deliberately heavy on the ways a rule can be confidently wrong: a limit that applies to a volume, an exclusion that changes a count, a near-miss file name, a format that cannot be read from an extension.",
+  "cases": [
+    {
+      "id": "page-limit-under",
+      "requirement": "Proposals shall not exceed 40 pages.",
+      "pages": 12,
+      "expected": "satisfied",
+      "rule": "page_limit"
+    },
+    {
+      "id": "page-limit-over",
+      "requirement": "Proposals shall not exceed 10 pages.",
+      "pages": 24,
+      "expected": "failed",
+      "rule": "page_limit"
+    },
+    {
+      "id": "page-limit-exactly-at-the-limit",
+      "why": "Off-by-one on a limit fails a compliant proposal, which costs the same trust as passing a bad one.",
+      "requirement": "Proposals shall not exceed 12 pages.",
+      "pages": 12,
+      "expected": "satisfied",
+      "rule": "page_limit"
+    },
+    {
+      "id": "exclusion-still-over",
+      "why": "The exclusion is real and cannot close a gap this size. Refusing to decide here would be useless caution.",
+      "requirement": "The technical volume shall not exceed 5 pages, excluding the cover letter and resumes.",
+      "pages": 24,
+      "expected": "failed",
+      "rule": "page_limit"
+    },
+    {
+      "id": "exclusion-decides-it",
+      "why": "Over by exactly the front matter the requirement excludes. Reporting a failure would be the rule's fault, not the response's.",
+      "requirement": "Proposals shall not exceed 3 pages, excluding the cover letter and the table of contents.",
+      "pageTexts": [
+        "Cover Letter\nWe are pleased to submit this proposal.",
+        "Table of Contents\n1. Approach  2. Experience  3. Price",
+        "1. Approach\nOur approach is described here.",
+        "2. Experience\nWe have done this before.",
+        "3. Price\nOur pricing is attached."
+      ],
+      "expected": "unverifiable",
+      "rule": "page_limit.exclusion"
+    },
+    {
+      "id": "volume-limit-without-a-volume",
+      "why": "Counting a whole three-volume response against Volume I's limit fails a compliant proposal.",
+      "requirement": "Volume I shall not exceed 5 pages.",
+      "pages": 24,
+      "expected": "unverifiable",
+      "rule": "page_limit.volume"
+    },
+    {
+      "id": "word-limit-over",
+      "requirement": "The executive summary shall not exceed 20 words.",
+      "pageTexts": [
+        "Executive Summary. Acme Systems proposes a modern, resilient, and fully accessible 311 customer relationship management platform for the City, delivered on schedule and within the available budget envelope."
+      ],
+      "expected": "failed",
+      "rule": "word_limit"
+    },
+    {
+      "id": "word-limit-under",
+      "requirement": "The executive summary shall not exceed 5,000 words.",
+      "pageTexts": [
+        "Executive Summary. Acme proposes a modern 311 platform."
+      ],
+      "expected": "satisfied",
+      "rule": "word_limit"
+    },
+    {
+      "id": "typography-cannot-be-read-from-text",
+      "why": "Reporting satisfied because nothing contradicted it would be an invention, and this is what proposals are rejected on.",
+      "requirement": "Text shall be 12-point Times New Roman, double-spaced, with 1-inch margins on 8.5 x 11 paper.",
+      "pages": 4,
+      "expected": "unverifiable",
+      "rule": "typography"
+    },
+    {
+      "id": "missing-form",
+      "requirement": "Offerors must submit a completed Standard Form 33 with Volume I.",
+      "pageTexts": [
+        "Volume I \u2014 Technical Approach. Our approach follows."
+      ],
+      "expected": "not_found",
+      "rule": "required_form"
+    },
+    {
+      "id": "form-mentioned-but-not-evidently-attached",
+      "why": "Naming a form is not attaching a signed one. The check goes as far as the evidence does and stops.",
+      "requirement": "Offerors must submit a completed Standard Form 33.",
+      "pageTexts": [
+        "Enclosures. Standard Form 33, signed by our authorised representative."
+      ],
+      "expected": "unverifiable",
+      "rule": "required_form"
+    },
+    {
+      "id": "one-of-two-forms-missing",
+      "requirement": "Offerors must submit a completed Standard Form 33 and Attachment J-1.",
+      "pageTexts": [
+        "Enclosures. Standard Form 33 is attached."
+      ],
+      "expected": "failed",
+      "rule": "required_form"
+    },
+    {
+      "id": "volume-structure-incomplete",
+      "requirement": "Proposals shall be submitted in Volume I \u2014 Technical, Volume II \u2014 Price, and Volume III \u2014 Past Performance.",
+      "pageTexts": [
+        "Volume I \u2014 Technical Approach",
+        "Volume II \u2014 Price"
+      ],
+      "expected": "failed",
+      "rule": "volume_structure"
+    },
+    {
+      "id": "volume-structure-complete",
+      "requirement": "Proposals shall be submitted in Volume I \u2014 Technical and Volume II \u2014 Price.",
+      "pageTexts": [
+        "Volume I \u2014 Technical Approach",
+        "Volume II \u2014 Price"
+      ],
+      "expected": "satisfied",
+      "rule": "volume_structure"
+    },
+    {
+      "id": "file-name-matches",
+      "requirement": "File names shall follow the convention RFP-2026-0041_VendorName_VolumeX.pdf.",
+      "pages": 2,
+      "files": [
+        "RFP-2026-0041_Acme_VolumeI.pdf"
+      ],
+      "expected": "satisfied",
+      "rule": "file_name"
+    },
+    {
+      "id": "file-name-does-not-match",
+      "requirement": "File names shall follow the convention RFP-2026-0041_VendorName_VolumeX.pdf.",
+      "pages": 2,
+      "files": [
+        "Acme Technical Proposal FINAL v3.pdf"
+      ],
+      "expected": "failed",
+      "rule": "file_name"
+    },
+    {
+      "id": "file-name-with-nothing-to-check-against",
+      "requirement": "File names shall follow the convention stated by the Contracting Officer.",
+      "pages": 2,
+      "files": [
+        "anything.pdf"
+      ],
+      "expected": "unverifiable",
+      "rule": "file_name.pattern"
+    },
+    {
+      "id": "file-format-wrong",
+      "requirement": "Each volume shall be submitted in PDF format.",
+      "pages": 2,
+      "files": [
+        "Acme_Volume_I.docx"
+      ],
+      "expected": "failed",
+      "rule": "file_format"
+    },
+    {
+      "id": "file-format-right",
+      "requirement": "Each volume shall be submitted in PDF format.",
+      "pages": 2,
+      "files": [
+        "Acme_Volume_I.pdf"
+      ],
+      "expected": "satisfied",
+      "rule": "file_format"
+    },
+    {
+      "id": "searchable-pdf-is-not-an-extension",
+      "why": "The right extension is necessary and not sufficient, and saying so is more useful than a tick.",
+      "requirement": "Each volume shall be submitted as a searchable PDF.",
+      "pages": 2,
+      "files": [
+        "Acme_Volume_I.pdf"
+      ],
+      "expected": "unverifiable",
+      "rule": "file_format.variant"
+    },
+    {
+      "id": "file-size",
+      "requirement": "No single file shall exceed 25 MB in size.",
+      "pages": 2,
+      "expected": "unverifiable",
+      "rule": "file_size"
+    },
+    {
+      "id": "signature",
+      "requirement": "The certification shall be signed by an official authorised to bind the Offeror.",
+      "pages": 2,
+      "expected": "unverifiable",
+      "rule": "signature"
+    },
+    {
+      "id": "hard-copies",
+      "why": "A physical requirement, and one proposals are turned away at the counter for.",
+      "requirement": "Offerors shall deliver one original and three hard copies to the address in Block 9.",
+      "pages": 2,
+      "expected": "unverifiable",
+      "rule": "copies"
+    },
+    {
+      "id": "binding",
+      "requirement": "Each volume shall be spiral-bound with tab dividers between sections.",
+      "pages": 2,
+      "expected": "unverifiable",
+      "rule": "binding"
+    },
+    {
+      "id": "submission-portal",
+      "requirement": "Proposals shall be submitted through PASSPort no later than the closing time.",
+      "pages": 2,
+      "expected": "unverifiable",
+      "rule": "submission_method"
+    },
+    {
+      "id": "compound-passes-the-count-and-cannot-check-the-font",
+      "why": "Reporting only the first rule is how a response passes a page count and fails on a font.",
+      "requirement": "Proposals shall not exceed 40 pages in 12-point Times New Roman.",
+      "pages": 4,
+      "expected": "unverifiable",
+      "rule": "typography",
+      "alsoRules": [
+        "page_limit"
+      ]
+    },
+    {
+      "id": "compound-fails-the-count",
+      "why": "The worst outcome decides. A requirement that fails one of its parts fails.",
+      "requirement": "Proposals shall not exceed 2 pages in 12-point Times New Roman.",
+      "pages": 9,
+      "expected": "failed",
+      "rule": "page_limit",
+      "alsoRules": [
+        "typography"
+      ]
+    },
+    {
+      "id": "substantive-requirement-has-no-rule",
+      "why": "The boundary. A rule that fired here would be judging something it cannot count.",
+      "requirement": "The Contractor shall maintain a Quality Control Plan throughout the period of performance.",
+      "pages": 4,
+      "expected": null,
+      "rule": null
+    },
+    {
+      "id": "narrative-mentioning-pages-is-not-a-page-limit",
+      "why": "A rule that fires on any sentence containing the word `pages` would flood the matrix with checks nobody asked for.",
+      "requirement": "The Contractor shall maintain web pages describing the programme for public reference.",
+      "pages": 4,
+      "expected": null,
+      "rule": null
+    },
+    {
+      "id": "prose-naming-a-person-is-not-a-file-convention",
+      "why": "The naming rule is gated on a template token, not on the word `named`. Prose says `named` constantly.",
+      "requirement": "Key Personnel named in Volume II shall not be replaced without the Contracting Officer's consent.",
+      "pages": 2,
+      "expected": null,
+      "rule": null
+    },
+    {
+      "id": "naming-stated-inline-without-the-phrase",
+      "why": "`a single PDF named RFP-2026-0041_VendorName_VolumeX.pdf` is a naming requirement, and gating on the phrase `file names` missed it.",
+      "requirement": "Submit a single PDF named RFP-2026-0041_VendorName_VolumeX.pdf.",
+      "pages": 2,
+      "files": [
+        "RFP-2026-0041_Acme_VolumeI.pdf"
+      ],
+      "expected": "satisfied",
+      "rule": "file_name"
+    },
+    {
+      "id": "amendment-not-acknowledged",
+      "why": "The single most common reason an otherwise compliant proposal is thrown out: the amendment was read, the response was updated, and nobody signed the acknowledgement block.",
+      "requirement": "Offerors shall acknowledge all amendments in Block 14 of the Standard Form 33.",
+      "pageTexts": [
+        "Volume I \u2014 Technical Approach. Our approach follows."
+      ],
+      "expected": "not_found",
+      "rule": "amendment_acknowledgement"
+    },
+    {
+      "id": "amendment-named-but-not-verifiable",
+      "why": "Naming an amendment is not signing the block, and the solicitation's own list of issued amendments is not in the response.",
+      "requirement": "Offerors shall acknowledge all amendments.",
+      "pageTexts": [
+        "Acknowledgements. Amendment 0001 and Amendment 0002 are acknowledged."
+      ],
+      "expected": "unverifiable",
+      "rule": "amendment_acknowledgement"
+    },
+    {
+      "id": "due-time-without-a-zone",
+      "why": "An hour either way is the difference between on time and late, and a clause stating a time with no zone is a real trap.",
+      "requirement": "Proposals shall be received no later than 14:00 on June 1, 2026.",
+      "pages": 2,
+      "expected": "unverifiable",
+      "rule": "due_time"
+    },
+    {
+      "id": "tab-structure-incomplete",
+      "requirement": "Volume I shall contain Tab A, Tab B and Tab C in that order.",
+      "pageTexts": [
+        "Volume I \u2014 Technical",
+        "Tab A \u2014 Approach"
+      ],
+      "expected": "failed",
+      "rule": "tab_structure"
+    },
+    {
+      "id": "tab-structure-complete",
+      "requirement": "Volume I shall contain Tab A and Tab B.",
+      "pageTexts": [
+        "Volume I \u2014 Technical",
+        "Tab A \u2014 Approach",
+        "Tab B \u2014 Experience"
+      ],
+      "expected": "satisfied",
+      "rule": "tab_structure"
+    },
+    {
+      "id": "contain-in-a-sentence-about-cost-is-not-a-tab-rule",
+      "why": "The structural verb has to be about structure. `shall contain costs` is not a document layout requirement.",
+      "requirement": "The Contractor shall contain costs within the ceiling stated in Section B.",
+      "pages": 2,
+      "expected": null,
+      "rule": null
+    },
+    {
+      "id": "pagination",
+      "requirement": "Pages shall be numbered consecutively with a footer on each page.",
+      "pages": 2,
+      "expected": "unverifiable",
+      "rule": "pagination"
+    },
+    {
+      "id": "language",
+      "requirement": "All submissions shall be written in English.",
+      "pages": 2,
+      "expected": "unverifiable",
+      "rule": "language_units"
+    }
+  ]
+}

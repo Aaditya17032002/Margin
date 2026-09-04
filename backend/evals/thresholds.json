@@ -1,0 +1,21 @@
+{
+  "_note": "Floors, not targets. Set from measured performance and raised deliberately; never lowered to make a build pass. A drop means the sweep got worse and the corpus is telling you so.",
+  "overallRecall": 0.9,
+
+  "_realNote": "Floors that apply to real solicitations only. They are null until the corpus has real cases: setting them earlier would fail every build without measuring anything. Set `minimumRealCases` first, then `realRecall` from what the corpus actually achieves — never above it, and never lowered afterwards.",
+  "realRecall": null,
+  "minimumRealCases": null,
+
+  "recall": {
+    "obligation": 0.9,
+    "instruction": 0.8,
+    "limit": 0.9,
+    "form": 0.9,
+    "certification": 0.8,
+    "clause": 0.9,
+    "date": 0.9,
+    "evaluation": 0.85,
+    "cross_reference": 0.7,
+    "volume": 0.8
+  }
+}

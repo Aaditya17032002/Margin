@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { Citation } from "@/types";
+import type { Citation, IntegrationId } from "@/types";
 
 export interface RailSource {
   citation: Citation;
@@ -19,6 +19,8 @@ interface UIState {
   commandOpen: boolean;
   shortcutsOpen: boolean;
   importOpen: boolean;
+  /** Which source the picker should open on. Null means "pick a sensible one". */
+  importSource: IntegrationId | null;
   recentCommands: string[];
 
   peek: (source: RailSource) => void;
@@ -30,7 +32,7 @@ interface UIState {
   setRailFocused: (focused: boolean) => void;
   setCommandOpen: (open: boolean) => void;
   setShortcutsOpen: (open: boolean) => void;
-  setImportOpen: (open: boolean) => void;
+  setImportOpen: (open: boolean, source?: IntegrationId | null) => void;
   rememberCommand: (id: string) => void;
 }
 
@@ -42,6 +44,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   commandOpen: false,
   shortcutsOpen: false,
   importOpen: false,
+  importSource: null,
   recentCommands: [],
 
   /** Hover / focus preview — ignored while a source is pinned. */
@@ -64,7 +67,10 @@ export const useUIStore = create<UIState>((set, get) => ({
   setRailFocused: (railFocused) => set({ railFocused }),
   setCommandOpen: (commandOpen) => set({ commandOpen }),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
-  setImportOpen: (importOpen) => set({ importOpen }),
+  // A button that names a source should land on that source. Opening the
+  // picker from "OneDrive" and arriving in a mailbox is a small lie about
+  // what the button does.
+  setImportOpen: (importOpen, importSource = null) => set({ importOpen, importSource }),
 
   rememberCommand: (id) =>
     set((state) => ({

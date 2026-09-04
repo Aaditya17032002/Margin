@@ -24,7 +24,7 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.db.base import async_session_factory
 from app.db.models.analysis import Analysis
-from app.db.models.matrix_row import MatrixRow
+from app.db.models.requirement import Requirement
 from app.db.models.question import Question
 from app.db.models.report import Report
 
@@ -76,9 +76,9 @@ async def generate_report_task(ctx: dict, report_id: str) -> dict:
 
             rows = (
                 await db.execute(
-                    select(MatrixRow)
-                    .where(MatrixRow.analysis_id == analysis.id)
-                    .order_by(MatrixRow.created_at.asc())
+                    select(Requirement)
+                    .where(Requirement.analysis_id == analysis.id, Requirement.state != "removed")
+                    .order_by(Requirement.document_id, Requirement.page, Requirement.reference)
                 )
             ).scalars().all()
             questions = (
@@ -95,7 +95,10 @@ async def generate_report_task(ctx: dict, report_id: str) -> dict:
                 analysis_id=analysis.id,
                 format=report.format,
             )
-            filepath = render(settings.REPORTS_DIR, report, analysis, rows, questions)
+            blocks = None
+            if EVIDENCE_PACK in (report.template_name or "").lower():
+                blocks = await _evidence_blocks(db, analysis, rows)
+            filepath = render(settings.REPORTS_DIR, report, analysis, rows, questions, blocks)
 
             report.status = "ready"
             report.storage_path = filepath
@@ -118,26 +121,115 @@ async def generate_report_task(ctx: dict, report_id: str) -> dict:
             return await _fail(db, report, str(exc)[:300])
 
 
+
+async def _evidence_blocks(db, analysis: Analysis, rows: list[Requirement]) -> list:
+    """Assemble the evidence pack from what is stored.
+
+    The verification queue is rebuilt here rather than read from a table on
+    purpose: it is derived from the current state of everything else, and a
+    stored copy would be a second version of the truth that quietly drifts.
+    """
+    from app.db.models.response_check import ResponseCheck
+    from app.pipeline import verification
+    from app.reports import evidence
+
+    version = int((analysis.response or {}).get("version") or 0)
+    checks: list = []
+    if version:
+        checks = list(
+            (
+                await db.execute(
+                    select(ResponseCheck).where(
+                        ResponseCheck.analysis_id == analysis.id,
+                        ResponseCheck.response_version == version,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    from app.db.models.question import Question
+
+    questions = list(
+        (await db.execute(select(Question).where(Question.analysis_id == analysis.id)))
+        .scalars()
+        .all()
+    )
+    from app.db.models.review import ReviewFinding, ReviewRound
+
+    rounds = list(
+        (await db.execute(select(ReviewRound).where(ReviewRound.analysis_id == analysis.id)))
+        .scalars()
+        .all()
+    )
+    review_findings = list(
+        (await db.execute(select(ReviewFinding).where(ReviewFinding.analysis_id == analysis.id)))
+        .scalars()
+        .all()
+    )
+    from app.db.models.contradiction import Contradiction as ContradictionRow
+
+    conflicts = list(
+        (await db.execute(select(ContradictionRow).where(ContradictionRow.analysis_id == analysis.id)))
+        .scalars()
+        .all()
+    )
+    queue = verification.build(
+        analysis=analysis,
+        requirements=list(rows),
+        checks=checks,
+        questions=questions,
+        reviews=rounds,
+        review_findings=review_findings,
+        contradictions=conflicts,
+    )
+    return evidence.build(
+        analysis=analysis,
+        requirements=list(rows),
+        checks=checks,
+        queue=queue,
+        questions=questions,
+        reviews=rounds,
+        review_findings=review_findings,
+        contradictions=conflicts,
+    )
+
+
 async def _fail(db, report: Report, reason: str) -> dict:
     report.status = "failed"
     await db.commit()
     return {"error": reason}
 
 
+#: The template name that produces the evidence pack rather than a briefing.
+EVIDENCE_PACK = "evidence pack"
+
+
 def render(
     reports_dir: str,
     report: Report,
     analysis: Analysis,
-    rows: list[MatrixRow],
+    rows: list[Requirement],
     questions: list[Question],
+    blocks: list | None = None,
 ) -> str:
     """Render in the format that was asked for.
 
     Naming a DOCX ``.pdf`` is worse than not offering PDF: the file opens in
     nothing and the user has no idea why. So PDF is a real conversion or a real
     failure, never a rename.
+
+    ``blocks`` carries the evidence pack when one was requested. It is passed
+    in rather than assembled here so both formats render the same record — a
+    pack that differed between DOCX and Markdown would be two records.
     """
     fmt = (report.format or "DOCX").upper()
+    if blocks is not None:
+        if fmt == "MD":
+            return _blocks_markdown(reports_dir, report, blocks)
+        docx_path = _blocks_docx(reports_dir, report, blocks)
+        return docx_path if fmt != "PDF" else _to_pdf(docx_path)
+
     if fmt == "MD":
         return _render_markdown(reports_dir, report, analysis, rows, questions)
 
@@ -147,11 +239,79 @@ def render(
     return _to_pdf(docx_path)
 
 
+
+# ── Evidence pack ────────────────────────────────────────────────────────
+#
+# The pack arrives as blocks — headings, paragraphs, notes and tables — so the
+# two formats walk identical content. Anything a renderer decided for itself
+# would be a difference between two copies of the same record.
+
+
+def _blocks_docx(reports_dir: str, report: Report, blocks: list) -> str:
+    from docx import Document as DocxDocument
+    from docx.shared import Pt
+
+    doc = DocxDocument()
+    for block in blocks:
+        kind = block[0]
+        if kind == "heading":
+            doc.add_heading(str(block[2]), level=int(block[1]))
+        elif kind == "para":
+            doc.add_paragraph(str(block[1]))
+        elif kind == "note":
+            paragraph = doc.add_paragraph(str(block[1]))
+            paragraph.runs[0].font.size = Pt(8)
+            paragraph.runs[0].italic = True
+        elif kind == "table":
+            headers, rows = block[1], block[2]
+            table = doc.add_table(rows=1, cols=len(headers))
+            table.style = "Light Grid Accent 1"
+            for index, name in enumerate(headers):
+                table.rows[0].cells[index].text = str(name)
+            for row in rows:
+                cells = table.add_row().cells
+                for index, value in enumerate(row[: len(headers)]):
+                    cells[index].text = str(value)
+            doc.add_paragraph()
+
+    os.makedirs(reports_dir, exist_ok=True)
+    filepath = os.path.join(reports_dir, f"{report.id}.docx")
+    doc.save(filepath)
+    return filepath
+
+
+def _blocks_markdown(reports_dir: str, report: Report, blocks: list) -> str:
+    out: list[str] = []
+    for block in blocks:
+        kind = block[0]
+        if kind == "heading":
+            out += ["", f"{'#' * int(block[1])} {block[2]}", ""]
+        elif kind == "para":
+            out += [str(block[1]), ""]
+        elif kind == "note":
+            out += [f"*{block[1]}*", ""]
+        elif kind == "table":
+            headers, rows = block[1], block[2]
+            out.append("| " + " | ".join(str(h) for h in headers) + " |")
+            out.append("| " + " | ".join("---" for _ in headers) + " |")
+            for row in rows:
+                cells = [str(value).replace("|", "\\|").replace("\n", " ") for value in row[: len(headers)]]
+                cells += [""] * (len(headers) - len(cells))
+                out.append("| " + " | ".join(cells) + " |")
+            out.append("")
+
+    os.makedirs(reports_dir, exist_ok=True)
+    filepath = os.path.join(reports_dir, f"{report.id}.md")
+    with open(filepath, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(out).strip() + "\n")
+    return filepath
+
+
 def _render_docx(
     reports_dir: str,
     report: Report,
     analysis: Analysis,
-    rows: list[MatrixRow],
+    rows: list[Requirement],
     questions: list[Question],
 ) -> str:
     from docx import Document as DocxDocument
@@ -245,7 +405,7 @@ def _render_markdown(
     reports_dir: str,
     report: Report,
     analysis: Analysis,
-    rows: list[MatrixRow],
+    rows: list[Requirement],
     questions: list[Question],
 ) -> str:
     """The same report as plain text, for a wiki, an email, or a diff."""
@@ -292,9 +452,22 @@ def _render_markdown(
         else:
             if research.get("query"):
                 out += ["", f"**Searched for:** {research['query']}"]
-            if research.get("summary"):
-                out += ["", str(research["summary"])]
             sources = research.get("sources") or []
+            by_url = {str(s.get("url")): s for s in sources}
+            claims = research.get("claims") or []
+            if claims:
+                for claim in claims:
+                    out += ["", str(claim.get("text") or "")]
+                    cited = [by_url.get(url) for url in (claim.get("sources") or [])]
+                    links = [
+                        f"[{c.get('site') or c.get('title')}]({c.get('url')})" for c in cited if c
+                    ]
+                    out.append(
+                        f"  *Source: {', '.join(links)}*" if links
+                        else "  *No source was cited for this paragraph.*"
+                    )
+            elif research.get("summary"):
+                out += ["", str(research["summary"])]
             out += ["", "### Sources", ""]
             if not sources:
                 out.append("This pass returned no sources. Treat the above as a lead to check, not as evidence.")
@@ -316,7 +489,7 @@ def _render_markdown(
     if rows:
         out += ["", "## Compliance matrix", "", "| Reference | Requirement | Type | Owner | Status |", "| --- | --- | --- | --- | --- |"]
         for row in rows:
-            requirement = (row.requirement or "").replace("|", "\\|")
+            requirement = (row.text or "").replace("|", "\\|")
             out.append(
                 f"| {row.reference or ''} | {requirement} | {row.type or ''} | "
                 f"{row.owner or 'Unassigned'} | {row.status or ''} |"
@@ -334,6 +507,14 @@ def _render_markdown(
     with open(filepath, "w", encoding="utf-8") as handle:
         handle.write("\n".join(out) + "\n")
     return filepath
+
+
+def _small(paragraph) -> None:  # noqa: ANN001 — python-docx has no stubs
+    from docx.shared import Pt
+
+    for run in paragraph.runs:
+        run.font.size = Pt(8)
+        run.italic = True
 
 
 def _cite(citation: dict | None) -> str:
@@ -426,12 +607,28 @@ def _research(doc, analysis: Analysis) -> None:
 
     if research.get("query"):
         doc.add_paragraph(f"Searched for: {research['query']}")
-    if research.get("summary"):
+
+    sources = research.get("sources") or []
+    by_url = {str(s.get("url")): s for s in sources}
+    claims = research.get("claims") or []
+    if claims:
+        # Each paragraph is followed by the pages that back it. A reader
+        # checking one sentence should not have to guess which of a dozen
+        # sources at the end of the section it came from.
+        for claim in claims:
+            doc.add_paragraph(str(claim.get("text") or ""))
+            cited = [by_url.get(url) for url in (claim.get("sources") or [])]
+            named = [str(c.get("site") or c.get("title") or "") for c in cited if c]
+            attribution = doc.add_paragraph(
+                f"Source: {', '.join(named)}" if named
+                else "No source was cited for this paragraph — check it before relying on it."
+            )
+            _small(attribution)
+    elif research.get("summary"):
         for para in str(research["summary"]).split("\n\n"):
             if para.strip():
                 doc.add_paragraph(para.strip())
 
-    sources = research.get("sources") or []
     if not sources:
         doc.add_paragraph(
             "This pass returned no sources, so nothing above can be traced to a "
@@ -492,7 +689,7 @@ def _findings(doc, analysis: Analysis) -> None:
             _quote(doc, finding.get("citation"))
 
 
-def _matrix(doc, rows: list[MatrixRow]) -> None:
+def _matrix(doc, rows: list[Requirement]) -> None:
     if not rows:
         return
     doc.add_heading("Compliance matrix", level=1)
@@ -503,7 +700,7 @@ def _matrix(doc, rows: list[MatrixRow]) -> None:
     for row in rows:
         cells = table.add_row().cells
         cells[0].text = row.reference or ""
-        cells[1].text = row.requirement or ""
+        cells[1].text = row.text or ""
         cells[2].text = row.type or ""
         cells[3].text = row.owner or "Unassigned"
         cells[4].text = row.status or ""
