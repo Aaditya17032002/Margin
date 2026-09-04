@@ -383,6 +383,18 @@ class ResponseBinding(CamelModel):
     summary: ResponseSummary = ResponseSummary()
 
 
+class ContradictionSummary(CamelModel):
+    """What the last run found that cannot both be met.
+
+    `found` is the count on the current read, not a running total: a
+    contradiction an amendment resolved should stop being counted.
+    """
+
+    found: int = 0
+    added: int = 0
+    closed: int = 0
+
+
 class FileNode(CamelModel):
     id: str
     name: str

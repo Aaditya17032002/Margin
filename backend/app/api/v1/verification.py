@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from app.core.deps import CurrentUser, DbSession
 from app.db.models.analysis import Analysis
+from app.db.models.contradiction import Contradiction as ContradictionRow
 from app.db.models.question import Question
 from app.db.models.requirement import Requirement
 from app.db.models.response_check import ResponseCheck
@@ -64,6 +65,10 @@ async def verification_queue(analysis_id: str, user: CurrentUser, db: DbSession)
         await db.execute(select(ReviewFinding).where(ReviewFinding.analysis_id == analysis_id))
     ).scalars().all()
 
+    conflicts = (
+        await db.execute(select(ContradictionRow).where(ContradictionRow.analysis_id == analysis_id))
+    ).scalars().all()
+
     items = verification.build(
         analysis=analysis,
         requirements=list(requirements),
@@ -71,6 +76,7 @@ async def verification_queue(analysis_id: str, user: CurrentUser, db: DbSession)
         questions=list(questions),
         reviews=list(rounds),
         review_findings=list(findings),
+        contradictions=list(conflicts),
     )
     return {"summary": verification.summarise(items), "items": [item.as_dict() for item in items]}
 

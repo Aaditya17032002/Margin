@@ -79,6 +79,7 @@ def build(
     questions: list | None = None,
     reviews: list | None = None,
     review_findings: list | None = None,
+    contradictions: list | None = None,
 ) -> list[QueueItem]:
     """Collect every open question across the analysis."""
     items: list[QueueItem] = []
@@ -90,6 +91,7 @@ def build(
     items += _checks(checks, {r.id: r for r in requirements})
     items += _questions(questions or [], analysis)
     items += _reviews(reviews or [], review_findings or [], analysis)
+    items += _contradictions(contradictions or [])
 
     items.sort(key=lambda item: (_ORDER.get(item.severity, 3), item.reference or item.title))
     return items
@@ -577,4 +579,39 @@ def _reviews(rounds: list, findings: list, analysis) -> list[QueueItem]:
                     tab="reviews",
                 )
             )
+    return items
+
+
+def _contradictions(rows: list) -> list[QueueItem]:
+    """Requirements that cannot both be met.
+
+    This is the one kind of item where the product has read the document
+    correctly and the document is the problem. Nothing downstream can resolve
+    it: the compliance matrix will show both clauses as live work, the response
+    check will judge the answer against whichever one it was given, and both
+    will look right.
+    """
+    items: list[QueueItem] = []
+    for row in rows:
+        if row.state != "open":
+            continue
+        items.append(
+            QueueItem(
+                id=f"contradiction:{row.id}",
+                kind="contradiction",
+                severity=BLOCKING if row.severity == "blocking" else IMPORTANT,
+                title=row.summary[:200],
+                why=(
+                    "Both clauses were extracted correctly. They disagree with each other, and "
+                    "no amount of reading the response can settle which one the team has to "
+                    "meet."
+                ),
+                consequence=(
+                    "Whichever clause somebody happened to read is the one being written to, "
+                    "and the other is a compliance failure nobody is looking at."
+                ),
+                tab="contradictions",
+                detail=row.rationale[:200],
+            )
+        )
     return items

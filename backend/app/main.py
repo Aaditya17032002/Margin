@@ -85,6 +85,7 @@ def create_app() -> FastAPI:
         analyses,
         documents,
         ingest,
+        contradictions,
         matrix,
         questions,
         response,
@@ -111,6 +112,7 @@ def create_app() -> FastAPI:
     app.include_router(documents.router, prefix=prefix)
     app.include_router(ingest.router, prefix=prefix)
     app.include_router(matrix.router, prefix=prefix)
+    app.include_router(contradictions.router, prefix=prefix)
     app.include_router(response.router, prefix=prefix)
     app.include_router(reviews.router, prefix=prefix)
     app.include_router(questions.router, prefix=prefix)

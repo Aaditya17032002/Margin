@@ -13,6 +13,7 @@ import type {
   ActivityEntry,
   Analysis,
   AnalysisMode,
+  Contradiction,
   AppNotification,
   DocType,
   ExportRecord,
@@ -358,6 +359,32 @@ export const responseApi = {
       method: "PATCH",
       body: patch,
     }),
+};
+
+/* ------------------------------------------------------------------ */
+/* Contradictions                                                       */
+/* ------------------------------------------------------------------ */
+
+export const contradictionsApi = {
+  list: (analysisId: string, includeResolved = false) =>
+    api<Contradiction[]>(
+      `/api/v1/analyses/${analysisId}/contradictions${includeResolved ? "?includeResolved=true" : ""}`,
+    ),
+
+  /**
+   * Record which requirement governs. Resolving supersedes the other in the
+   * ledger, so the losing clause stops reading as live work while staying
+   * answerable about what happened to it.
+   */
+  resolve: (
+    analysisId: string,
+    contradictionId: string,
+    body: { outcome: "resolved" | "disputed" | "dismissed"; governsId?: string; resolution: string },
+  ) =>
+    api<Contradiction & { superseded: string | null }>(
+      `/api/v1/analyses/${analysisId}/contradictions/${contradictionId}/resolve`,
+      { method: "POST", body },
+    ),
 };
 
 /* ------------------------------------------------------------------ */

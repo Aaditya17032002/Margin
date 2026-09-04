@@ -32,6 +32,7 @@ import { CoveragePanel } from "@/components/workspace/coverage";
 import { ResponseGapPanel } from "@/components/workspace/response-gap";
 import { VerificationPanel } from "@/components/workspace/verification";
 import { ReviewsPanel } from "@/components/workspace/reviews";
+import { ContradictionsPanel } from "@/components/workspace/contradictions";
 import {
   AmendmentsPanel,
   ComplianceMatrix,
@@ -148,6 +149,9 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
     // "stop what you are doing". Everything else is a category of work.
     verify: verificationBlocking ? { value: verificationBlocking, tone: "seal" } : undefined,
     coverage: coverageGaps ? { value: coverageGaps, tone: "ochre" } : undefined,
+    contradictions: analysis.contradictions?.found
+      ? { value: analysis.contradictions.found, tone: "seal" }
+      : undefined,
     // Mandatory requirements the draft does not answer. Nothing else on
     // the rail outranks it once a response is bound.
     response: analysis.response?.summary?.blocking
@@ -375,6 +379,7 @@ export function WorkspaceView({ analysisId }: { analysisId: string }) {
                 {tab === "coverage" ? <CoveragePanel analysis={analysis} /> : null}
                 {tab === "response" ? <ResponseGapPanel analysis={analysis} /> : null}
                 {tab === "reviews" ? <ReviewsPanel analysis={analysis} /> : null}
+                {tab === "contradictions" ? <ContradictionsPanel analysis={analysis} /> : null}
                 {tab === "scope" ? (
                   <FindingsPanel
                     analysis={analysis}

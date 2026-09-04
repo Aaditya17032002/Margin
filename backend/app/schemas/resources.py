@@ -88,6 +88,24 @@ class MatrixRowResponse(CamelModel):
     history: list[dict] = []
 
 
+# ── Contradictions ───────────────────────────────────────────────────────
+
+class ContradictionResolve(CamelModel):
+    """Which requirement governs, and why.
+
+    `disputed` is not a weaker `resolved`. It records that the document itself
+    is contradictory and a question to the agency is the only way out — a
+    different outcome, and the one most likely to move a deadline.
+    """
+
+    outcome: Literal["resolved", "disputed", "dismissed"] = "resolved"
+    #: Required when resolving: the requirement that governs.
+    governs_id: str | None = Field(None, alias="governsId")
+    #: Six weeks from now this is the only record of why the team wrote to one
+    #: clause and not the other.
+    resolution: str
+
+
 # ── Colour-team reviews ──────────────────────────────────────────────────
 
 class ReviewRoundCreate(CamelModel):

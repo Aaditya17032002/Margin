@@ -348,6 +348,8 @@ export interface Analysis {
   ledger?: LedgerDelta;
   /** The draft response bound to this solicitation, if one has been. */
   response?: ResponseBinding;
+  /** How many requirement pairs the last run found that cannot both be met. */
+  contradictions?: { found: number; added: number; closed: number };
   /** Only a deep-research pass fills this in; other modes leave it empty. */
   research?: ExternalResearch;
 }
@@ -616,6 +618,46 @@ export interface WhiteGloveItem {
   rule: string;
   whyNotChecked: string;
   stakes: Stakes;
+}
+
+/**
+ * Two requirements in the same package that cannot both be met.
+ *
+ * The one kind of problem where the product read the document correctly and
+ * the document is the problem. Nothing downstream can settle it: the matrix
+ * shows both clauses as live work, and a response check judges the answer
+ * against whichever one it was handed.
+ */
+export interface ContradictionSide {
+  requirementId: string;
+  reference: string;
+  text: string;
+  stakes: Stakes;
+  state: string;
+  citation: Citation;
+  value: string;
+}
+
+export interface Contradiction {
+  id: string;
+  analysisId: string;
+  key: string;
+  /** page_limit, deadline, font_size, permission, and so on. */
+  dimension: string;
+  summary: string;
+  severity: "blocking" | "important";
+  state: "open" | "resolved" | "disputed" | "dismissed";
+  left: ContradictionSide;
+  right: ContradictionSide;
+  /** Which one probably governs. A recommendation the product never acts on. */
+  recommendedId: string;
+  rationale: string;
+  governsId?: string | null;
+  resolution?: string | null;
+  resolvedBy?: string | null;
+  resolvedAt?: string | null;
+  questionId?: string | null;
+  history?: { at: string; event: string; detail: string }[];
 }
 
 export interface QAQuestion {

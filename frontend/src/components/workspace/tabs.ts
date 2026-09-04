@@ -5,6 +5,7 @@ export const WORKSPACE_TABS = [
   { id: "coverage", label: "Coverage" },
   { id: "scope", label: "Scope" },
   { id: "matrix", label: "Compliance Matrix" },
+  { id: "contradictions", label: "Conflicts" },
   { id: "response", label: "Response Gap" },
   { id: "reviews", label: "Reviews" },
   { id: "legal", label: "Legal & Regulatory" },

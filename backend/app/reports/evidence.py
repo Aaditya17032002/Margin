@@ -52,6 +52,7 @@ def build(
     questions: list | None = None,
     reviews: list | None = None,
     review_findings: list | None = None,
+    contradictions: list | None = None,
 ) -> list[Block]:
     blocks: list[Block] = []
     blocks.append(("heading", 1, "Evidence pack"))
@@ -73,6 +74,7 @@ def build(
 
     blocks += _coverage(analysis)
     blocks += _amendments(analysis)
+    blocks += _contradictions(contradictions or [])
     blocks += _requirements(requirements)
     blocks += _questions(questions or [])
     blocks += _response(analysis, checks, requirements)
@@ -162,6 +164,56 @@ def _amendments(analysis) -> list[Block]:
                 "Answers written against wording an amendment has since replaced: "
                 + "; ".join(str(entry) for entry in invalidated)
                 + ". Each was reopened rather than carried over as complete.",
+            )
+        )
+    return blocks
+
+
+def _contradictions(rows: list) -> list[Block]:
+    """Requirements that could not both be met, and who decided which governed.
+
+    The most valuable page in this pack, and the one nobody thinks to keep. Six
+    weeks after submission the question "why did we write to forty pages when
+    the attachment said fifty?" has exactly one good answer, and it is a name
+    and a date.
+    """
+    if not rows:
+        return []
+
+    blocks: list[Block] = [("heading", 2, "Requirements that contradicted each other")]
+    blocks.append(
+        (
+            "para",
+            "Clauses in this package that could not both be met. Each was extracted correctly; "
+            "the disagreement is in the document. Detection is deterministic; the decision was "
+            "a person's.",
+        )
+    )
+    blocks.append(
+        (
+            "table",
+            ["What", "The conflict", "Outcome", "Governs", "Reason", "Decided by", "When"],
+            [
+                [
+                    row.dimension.replace("_", " "),
+                    row.summary[:400],
+                    row.state,
+                    row.governs_id or "—",
+                    (row.resolution or "")[:300],
+                    row.resolved_by or "",
+                    row.resolved_at.isoformat(timespec="minutes") if row.resolved_at else "",
+                ]
+                for row in rows
+            ],
+        )
+    )
+    unresolved = [row for row in rows if row.state == "open"]
+    if unresolved:
+        blocks.append(
+            (
+                "note",
+                f"{len(unresolved)} contradiction(s) were never resolved. The response was "
+                "written against one clause of each pair, and nobody recorded which.",
             )
         )
     return blocks

@@ -23,7 +23,7 @@ from app.db.models.notification import Notification
 from app.db.models.question import Question
 from app.db.models.requirement import Requirement
 from app.db.models.user import User
-from app.pipeline import amendments
+from app.pipeline import amendments, contradictions
 from app.pipeline.anchor import CitationAnchor
 from app.pipeline.corpus import Corpus, build_corpus
 from app.pipeline.coverage import CoverageLedger, summarise as coverage_summary
@@ -212,7 +212,13 @@ async def run_analysis_task(ctx: dict, analysis_id: str) -> dict:
                 )
                 analysis.ledger = reconciliation.as_dict()
 
-                # ── Step 5: what an amendment changed ───────────────────
+                # ── Step 5: requirements that cannot both be met ────────
+                # Section L says forty pages, an attachment says fifty, an
+                # amendment says sixty-five. Each is extracted correctly and
+                # nothing else in the pipeline notices that they disagree.
+                await _detect_contradictions(db, analysis, version_id)
+
+                # ── Step 6: what an amendment changed ───────────────────
                 # A reworded clause reaches the ledger as one removal and one
                 # addition. Pairing them back up is what turns that into the
                 # question a proposal manager actually has: which of our
@@ -281,6 +287,43 @@ async def _persist_chunks(
         )
     await db.flush()
     logger.info("chunks_persisted", analysis_id=analysis.id, chunks=len(corpus.chunks))
+
+
+async def _detect_contradictions(db: AsyncSession, analysis: Analysis, run_id: str) -> None:
+    rows = (
+        await db.execute(
+            select(Requirement).where(
+                Requirement.analysis_id == analysis.id, Requirement.state == "open"
+            )
+        )
+    ).scalars().all()
+    if not rows:
+        return
+
+    # The document a requirement came from decides which of two probably
+    # governs, so it travels with the candidate.
+    kinds = {
+        doc.id: doc.doc_kind
+        for doc in (await db.execute(select(Document).where(Document.analysis_id == analysis.id)))
+        .scalars()
+        .all()
+    }
+    candidates = [
+        contradictions.Candidate(
+            id=row.id,
+            reference=row.reference,
+            text=row.text,
+            kind=row.kind,
+            document_kind=kinds.get(row.document_id, "base"),
+            stakes=row.stakes,
+            state=row.state,
+        )
+        for row in rows
+    ]
+    found = contradictions.detect(candidates)
+    analysis.contradictions = await contradictions.reconcile(
+        db, analysis_id=analysis.id, org_id=analysis.org_id, found=found, run_id=run_id
+    )
 
 
 async def _amendment_impact(

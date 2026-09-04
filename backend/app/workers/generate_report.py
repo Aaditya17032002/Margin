@@ -167,6 +167,13 @@ async def _evidence_blocks(db, analysis: Analysis, rows: list[Requirement]) -> l
         .scalars()
         .all()
     )
+    from app.db.models.contradiction import Contradiction as ContradictionRow
+
+    conflicts = list(
+        (await db.execute(select(ContradictionRow).where(ContradictionRow.analysis_id == analysis.id)))
+        .scalars()
+        .all()
+    )
     queue = verification.build(
         analysis=analysis,
         requirements=list(rows),
@@ -174,6 +181,7 @@ async def _evidence_blocks(db, analysis: Analysis, rows: list[Requirement]) -> l
         questions=questions,
         reviews=rounds,
         review_findings=review_findings,
+        contradictions=conflicts,
     )
     return evidence.build(
         analysis=analysis,
@@ -183,6 +191,7 @@ async def _evidence_blocks(db, analysis: Analysis, rows: list[Requirement]) -> l
         questions=questions,
         reviews=rounds,
         review_findings=review_findings,
+        contradictions=conflicts,
     )
 
 

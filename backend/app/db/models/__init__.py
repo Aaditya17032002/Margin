@@ -9,6 +9,7 @@ from app.db.models.finding import Finding
 from app.db.models.citation import Citation
 from app.db.models.requirement import Requirement
 from app.db.models.response_check import ResponseCheck
+from app.db.models.contradiction import Contradiction
 from app.db.models.review import ReviewFinding, ReviewRound
 from app.db.models.verdict import Verdict
 from app.db.models.question import Question
@@ -32,6 +33,7 @@ __all__ = [
     "Citation",
     "Requirement",
     "ResponseCheck",
+    "Contradiction",
     "ReviewRound",
     "ReviewFinding",
     "Verdict",
