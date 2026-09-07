@@ -47,3 +47,5 @@ dump.rdb
 
 .github-pat
 pull-and-start.ps1
+
+.env.server.tmp
