@@ -96,6 +96,22 @@ TEMPLATE_DEFAULTS: list[dict] = [
         ],
         "format": "DOCX",
     },
+    {
+        # Name is matched by the renderer (`response match`). Export from
+        # Reports or from the Response Gap tab after a draft has been checked.
+        "name": "Response Match Analysis",
+        "kind": "report",
+        "description": "The draft response checked against every requirement: match summary, bid-losing gaps, evidence per clause, and who signed off.",
+        "sections": [
+            "Match summary",
+            "Could lose the bid",
+            "Gaps by risk",
+            "Requirement by requirement",
+            "Who signed what",
+            "Carried across drafts",
+        ],
+        "format": "DOCX",
+    },
 ]
 
 

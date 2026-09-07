@@ -96,7 +96,10 @@ async def generate_report_task(ctx: dict, report_id: str) -> dict:
                 format=report.format,
             )
             blocks = None
-            if EVIDENCE_PACK in (report.template_name or "").lower():
+            template_key = (report.template_name or "").lower()
+            if RESPONSE_MATCH in template_key:
+                blocks = await _response_match_blocks(db, analysis, rows)
+            elif EVIDENCE_PACK in template_key:
                 blocks = await _evidence_blocks(db, analysis, rows)
             filepath = render(settings.REPORTS_DIR, report, analysis, rows, questions, blocks)
 
@@ -120,6 +123,33 @@ async def generate_report_task(ctx: dict, report_id: str) -> dict:
             logger.exception("generate_report_error", report_id=report_id, error=str(exc))
             return await _fail(db, report, str(exc)[:300])
 
+
+
+async def _response_match_blocks(db, analysis: Analysis, rows: list[Requirement]) -> list:
+    """Assemble the response-match report from the bound draft's checks."""
+    from app.db.models.response_check import ResponseCheck
+    from app.reports import response_match
+
+    version = int((analysis.response or {}).get("version") or 0)
+    checks: list = []
+    if version:
+        checks = list(
+            (
+                await db.execute(
+                    select(ResponseCheck).where(
+                        ResponseCheck.analysis_id == analysis.id,
+                        ResponseCheck.response_version == version,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return response_match.build(
+        analysis=analysis,
+        requirements=list(rows),
+        checks=checks,
+    )
 
 
 async def _evidence_blocks(db, analysis: Analysis, rows: list[Requirement]) -> list:
@@ -201,8 +231,9 @@ async def _fail(db, report: Report, reason: str) -> dict:
     return {"error": reason}
 
 
-#: The template name that produces the evidence pack rather than a briefing.
+#: Template names matched by the renderer (case-insensitive substring).
 EVIDENCE_PACK = "evidence pack"
+RESPONSE_MATCH = "response match"
 
 
 def render(
@@ -219,9 +250,10 @@ def render(
     nothing and the user has no idea why. So PDF is a real conversion or a real
     failure, never a rename.
 
-    ``blocks`` carries the evidence pack when one was requested. It is passed
-    in rather than assembled here so both formats render the same record — a
-    pack that differed between DOCX and Markdown would be two records.
+    ``blocks`` carries a block-built pack (evidence or response match) when
+    one was requested. It is passed in rather than assembled here so both
+    formats render the same record — a pack that differed between DOCX and
+    Markdown would be two records.
     """
     fmt = (report.format or "DOCX").upper()
     if blocks is not None:

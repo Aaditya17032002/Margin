@@ -1,10 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, Check, CircleHelp, FileUp, Minus, RefreshCw, ScanLine, X } from "lucide-react";
+import { AlertTriangle, Check, CircleHelp, Download, FileUp, Minus, RefreshCw, ScanLine, X } from "lucide-react";
 
 import { cn, pluralize } from "@/lib/utils";
-import { responseApi } from "@/lib/api";
+import { reportsApi, responseApi } from "@/lib/api";
 import { relative } from "@/lib/dates";
 import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader, Well } from "@/components/ui/surface";
@@ -16,6 +16,7 @@ import { notify } from "@/components/ui/toaster";
 import { CitationMeta } from "@/components/domain/primitives";
 import type { Analysis, CheckStatus, ResponseCheck, VerificationBasis } from "@/types";
 
+const RESPONSE_MATCH_TEMPLATE = "Response Match Analysis";
 /**
  * The response gap view.
  *
@@ -117,6 +118,45 @@ export function ResponseGapPanel({ analysis }: { analysis: Analysis }) {
     }
   }
 
+  async function downloadMatchReport() {
+    setBusy(true);
+    try {
+      const record = await reportsApi.generate(analysis.id, {
+        templateName: RESPONSE_MATCH_TEMPLATE,
+        format: "DOCX",
+        destination: "download",
+      });
+      notify.success("Building the Response Match report.", {
+        description: "It will download when ready — also listed under Reports.",
+      });
+      // Poll briefly so the person does not have to leave the tab.
+      for (let attempt = 0; attempt < 40; attempt++) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        try {
+          await reportsApi.download(
+            record.id,
+            `${analysis.solicitationNumber || analysis.title} — Response Match.docx`,
+          );
+          notify.success("Response Match report downloaded.");
+          return;
+        } catch {
+          // Still generating (202) or transient — keep waiting.
+        }
+      }
+      notify.info("Still rendering.", {
+        description: "Open Reports when it finishes — the export is queued.",
+      });
+    } catch (e) {
+      notify.error(
+        e instanceof Error && e.message
+          ? e.message
+          : "The Response Match report could not be started.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!bound) {
     return <BindResponse analysis={analysis} busy={busy} onUpload={upload} />;
   }
@@ -144,6 +184,14 @@ export function ResponseGapPanel({ analysis }: { analysis: Analysis }) {
           }
           actions={
             <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy || !rows.length}
+                onClick={() => void downloadMatchReport()}
+              >
+                <Download /> Download report
+              </Button>
               <UploadButton busy={busy} onUpload={upload} label="Upload a new draft" />
               <Button
                 variant="secondary"
