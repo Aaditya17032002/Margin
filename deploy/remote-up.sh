@@ -2,7 +2,7 @@
 # Pull Margin images and (re)start the stack on the shared Azure host.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 : "${DOCKERHUB_USERNAME:=aditya17032002}"
